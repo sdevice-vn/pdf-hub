@@ -1,12 +1,12 @@
 'use strict';
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, nativeTheme } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { Library } = require('./lib/library');
 
 let mainWindow = null;
 let library = null;
-let settings = { libraryPath: null };
+let settings = { libraryPath: null, dark: null };
 
 // ---------- Cài đặt (lưu đường dẫn thư mục thư viện) ----------
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
@@ -22,6 +22,26 @@ function loadSettings() {
 function saveSettings() {
   fs.mkdirSync(path.dirname(settingsFile()), { recursive: true });
   fs.writeFileSync(settingsFile(), JSON.stringify(settings, null, 2), 'utf8');
+}
+
+// ---------- Giao diện sáng/tối cho thanh tiêu đề ----------
+const THEME_COLORS = {
+  light: { color: '#E9ECE9', symbolColor: '#16201B' },
+  dark: { color: '#0E1311', symbolColor: '#E6ECE8' }
+};
+const TITLEBAR_HEIGHT = 52;
+
+function isDark() {
+  return typeof settings.dark === 'boolean' ? settings.dark : nativeTheme.shouldUseDarkColors;
+}
+
+function applyTheme(win) {
+  if (!win || win.isDestroyed()) return;
+  const t = isDark() ? THEME_COLORS.dark : THEME_COLORS.light;
+  win.setBackgroundColor(t.color);
+  if (process.platform === 'win32') {
+    win.setTitleBarOverlay({ color: t.color, symbolColor: t.symbolColor, height: TITLEBAR_HEIGHT });
+  }
 }
 
 // ---------- IPC ----------
@@ -83,6 +103,16 @@ function registerIpc() {
   handle('trash:empty', mutate((lib) => lib.emptyTrash()));
 
   handle('file:read', async (id) => need().readFile(id));
+  handle('thumb:get', async (id) => need().getThumb(id));
+  handle('thumb:set', async (id, data) => {
+    await need().setThumb(id, data);
+  });
+
+  handle('app:set-theme', async (dark) => {
+    settings.dark = !!dark;
+    saveSettings();
+    applyTheme(mainWindow);
+  });
 
   handle('file:export', async (id) => {
     const lib = need();
@@ -113,14 +143,22 @@ function registerIpc() {
 
 // ---------- Cửa sổ ----------
 function createWindow() {
+  const t = isDark() ? THEME_COLORS.dark : THEME_COLORS.light;
+  // Thanh tiêu đề tùy biến (nút thu nhỏ/phóng to/đóng vẽ đè lên giao diện) chỉ dùng trên Windows
+  const customTitleBar = process.platform === 'win32'
+    ? { titleBarStyle: 'hidden', titleBarOverlay: { ...t, height: TITLEBAR_HEIGHT } }
+    : {};
+
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 860,
-    minWidth: 900,
-    minHeight: 600,
+    minWidth: 960,
+    minHeight: 620,
     title: 'PDF Hub',
-    backgroundColor: '#111827',
+    show: false,
+    backgroundColor: t.color,
     autoHideMenuBar: true,
+    ...customTitleBar,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -129,6 +167,7 @@ function createWindow() {
     }
   });
 
+  mainWindow.once('ready-to-show', () => mainWindow.show());
   mainWindow.loadFile(path.join(__dirname, 'src', 'index.html'));
 
   // Không cho trang điều hướng đi nơi khác (ví dụ khi thả file PDF vào cửa sổ)
