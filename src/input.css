@@ -2,12 +2,121 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  font-family: 'Segoe UI', system-ui, -apple-system, Roboto, 'Helvetica Neue', Arial, sans-serif;
+/* ---------- Design tokens ---------- */
+:root {
+  --desk: 233 236 233;
+  --panel: 247 249 247;
+  --sunken: 221 225 221;
+  --line: 207 213 208;
+  --ink: 22 32 27;
+  --muted: 86 99 91;
+  --accent: 15 118 110;
+  --accent-ink: 255 255 255;
+  --paper: 255 255 255;
+  --shadow-sheet: 0 0 0 1px rgb(22 32 27 / 0.09), 0 1px 2px rgb(22 32 27 / 0.10);
+  --shadow-lift: 0 0 0 1px rgb(22 32 27 / 0.12), 0 8px 18px -6px rgb(22 32 27 / 0.30);
+  --shadow-pop: 0 0 0 1px rgb(22 32 27 / 0.08), 0 18px 48px -12px rgb(22 32 27 / 0.35);
+  color-scheme: light;
 }
 
-.custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
-.custom-scrollbar::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.05); }
-.custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.2); border-radius: 3px; }
-.dark .custom-scrollbar::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.05); }
-.dark .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); }
+.dark {
+  --desk: 14 19 17;
+  --panel: 20 27 24;
+  --sunken: 9 13 11;
+  --line: 38 49 43;
+  --ink: 230 236 232;
+  --muted: 140 156 148;
+  --accent: 52 190 165;
+  --accent-ink: 6 30 25;
+  --paper: 250 250 250;
+  --shadow-sheet: 0 0 0 1px rgb(0 0 0 / 0.5), 0 1px 3px rgb(0 0 0 / 0.5);
+  --shadow-lift: 0 0 0 1px rgb(0 0 0 / 0.6), 0 10px 22px -6px rgb(0 0 0 / 0.7);
+  --shadow-pop: 0 0 0 1px rgb(255 255 255 / 0.06), 0 22px 56px -12px rgb(0 0 0 / 0.8);
+  color-scheme: dark;
+}
+
+@layer base {
+  html, body { height: 100%; }
+  body {
+    @apply bg-desk text-ink font-sans antialiased;
+    font-size: 14px;
+    line-height: 1.5;
+    overflow: hidden;
+    user-select: none;
+  }
+  input, select { user-select: text; }
+  :focus-visible {
+    outline: 2px solid rgb(var(--accent));
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  button { cursor: pointer; }
+  button:disabled { cursor: default; opacity: 0.5; }
+}
+
+@layer components {
+  /* Thanh tiêu đề tùy biến: kéo được, nút bấm thì không */
+  .drag { -webkit-app-region: drag; }
+  .no-drag { -webkit-app-region: no-drag; }
+  .safe-right {
+    padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 16px);
+  }
+
+  /* Tờ giấy: mỗi tài liệu là một tờ giấy đặt trên mặt bàn */
+  .sheet {
+    position: relative;
+    background: rgb(var(--paper));
+    border-radius: 3px;
+    box-shadow: var(--shadow-sheet);
+    transition: box-shadow 160ms ease, transform 160ms ease;
+  }
+  .sheet-wrap { isolation: isolate; position: relative; }
+  .sheet-wrap::before,
+  .sheet-wrap::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: 3px;
+    background: rgb(var(--paper));
+    box-shadow: var(--shadow-sheet);
+    opacity: 0;
+  }
+  /* 2–4 trang: một lớp giấy phía sau; từ 5 trang: hai lớp */
+  .stack-1::before { opacity: 1; transform: translate(4px, 4px); }
+  .stack-2::before { opacity: 1; transform: translate(4px, 4px); }
+  .stack-2::after  { opacity: 1; transform: translate(8px, 8px); z-index: -2; }
+
+  .doc:hover .sheet,
+  .doc:focus-within .sheet { box-shadow: var(--shadow-lift); transform: translateY(-2px); }
+
+  .thumb-img { animation: thumb-in 220ms ease-out both; }
+  @keyframes thumb-in { from { opacity: 0; } to { opacity: 1; } }
+
+  .tool-btn {
+    @apply inline-flex items-center justify-center h-8 w-8 rounded-lg text-muted hover:text-ink hover:bg-sunken transition-colors;
+  }
+  .field {
+    @apply w-full rounded-lg bg-sunken/70 border border-transparent px-3 py-2 text-sm text-ink placeholder:text-muted focus:border-accent focus:outline-none;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 h-9 px-3.5 rounded-lg text-sm font-medium transition-colors;
+  }
+  .btn-primary { @apply btn bg-accent text-accent-ink hover:brightness-110; }
+  .btn-quiet { @apply btn text-ink bg-sunken/80 hover:bg-sunken; }
+  .btn-danger { @apply btn bg-red-600 text-white hover:bg-red-700; }
+
+  .scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+  .scroll::-webkit-scrollbar-track { background: transparent; }
+  .scroll::-webkit-scrollbar-thumb {
+    background: rgb(var(--muted) / 0.35);
+    border-radius: 8px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  .scroll::-webkit-scrollbar-thumb:hover { background-color: rgb(var(--muted) / 0.6); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

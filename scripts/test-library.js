@@ -26,6 +26,12 @@ const { Library } = require('../lib/library');
   assert(path.resolve(lib.getAbsPath(c.id)).startsWith(root + path.sep));
   assert(!c.name.includes('/') && !c.name.includes(':'));
 
+  // Ảnh xem trước: lưu, đọc lại, bị xóa cùng tài liệu
+  assert.strictEqual(await lib.getThumb(a.id), null);
+  await lib.setThumb(a.id, Buffer.from([0xff, 0xd8, 0xff]));
+  assert((await lib.getThumb(a.id)).equals(Buffer.from([0xff, 0xd8, 0xff])));
+  await assert.rejects(() => lib.getThumb('../../etc/passwd'), /Không tìm thấy/);
+
   // Phân loại: thêm / đổi tên / xóa
   await lib.addCategory('Hợp đồng');
   assert(fs.existsSync(on('Hợp đồng')));
@@ -42,8 +48,10 @@ const { Library } = require('../lib/library');
   assert(lib.getFile(a.id).isTrash);
   await lib.restore(a.id);
   assert(fs.existsSync(on('Dự án', 'bao cao.pdf')));
+  await lib.setThumb(b.id, Buffer.from([1, 2, 3]));
   await lib.trash(b.id);
   await lib.remove(b.id);
+  assert(!fs.existsSync(on('.pdfhub', 'thumbs', b.id + '.jpg')), 'thumbnail bị xóa cùng tài liệu');
   assert(!fs.existsSync(on('.thung-rac', b.id + '.pdf')));
   assert.strictEqual(lib.files.some((f) => f.id === b.id), false);
 
@@ -62,10 +70,22 @@ const { Library } = require('../lib/library');
   assert(lib.files.some((f) => f.name === 'tu-chep.pdf' && f.category === 'Học tập'));
   assert.strictEqual(lib.files.some((f) => f.id === c.id), false);
 
+  // Ảnh xem trước: lưu, đọc lại, bị xóa cùng file
+  const t = await lib.addFile({ name: 'thumb.pdf', data: pdf, category: 'Khác' });
+  assert.strictEqual(await lib.getThumb(t.id), null);
+  await lib.setThumb(t.id, Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
+  assert.deepStrictEqual([...(await lib.getThumb(t.id))], [0xff, 0xd8, 0xff, 0xd9]);
+  await assert.rejects(() => lib.setThumb('khong-ton-tai', Buffer.from([1])), /Không tìm thấy/);
+  await lib.trash(t.id);
+  await lib.remove(t.id);
+  assert.strictEqual(fs.existsSync(on('.pdfhub', 'thumbs', t.id + '.jpg')), false);
+
   // Dọn thùng rác
   const d = await lib.addFile({ name: 'x.pdf', data: pdf, category: 'Khác' });
+  await lib.setThumb(d.id, Buffer.from([1, 2, 3]));
   await lib.trash(d.id);
   await lib.emptyTrash();
+  assert.strictEqual(fs.existsSync(on('.pdfhub', 'thumbs', d.id + '.jpg')), false);
   assert.strictEqual(lib.files.some((f) => f.isTrash), false);
 
   fs.rmSync(root, { recursive: true, force: true });
