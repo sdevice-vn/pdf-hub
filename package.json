@@ -1,0 +1,48 @@
+{
+  "name": "pdf-hub",
+  "version": "1.0.0",
+  "description": "PDF Hub - Quản lý & đọc tài liệu PDF, lưu trực tiếp vào thư mục trên ổ đĩa",
+  "main": "main.js",
+  "author": "SDevice VN",
+  "license": "MIT",
+  "scripts": {
+    "prepare:assets": "node scripts/prepare-assets.js && tailwindcss -i src/input.css -o src/styles.css --minify",
+    "test": "node scripts/test-library.js",
+    "start": "npm run prepare:assets && electron .",
+    "dist": "npm run prepare:assets && electron-builder --win --x64 --publish never"
+  },
+  "build": {
+    "appId": "vn.sdevice.pdfhub",
+    "productName": "PDF Hub",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "lib/**/*",
+      "src/index.html",
+      "src/app.js",
+      "src/styles.css",
+      "src/vendor/**/*"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false
+    }
+  },
+  "devDependencies": {
+    "@fortawesome/fontawesome-free": "^6.4.0",
+    "electron": "^45.2.2",
+    "electron-builder": "^26.18.0",
+    "pdfjs-dist": "^3.11.174",
+    "tailwindcss": "^3.4.19"
+  }
+}

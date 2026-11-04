@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="vi" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; worker-src 'self' blob:; connect-src 'self'">
+    <title>PDF Hub - Quản lý File PDF</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css">
+    <script src="vendor/pdf.min.js"></script>
+</head>
+<body class="bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-100 h-full flex flex-col transition-colors duration-200 custom-scrollbar">
+
+    <!-- Header Navigation -->
+    <header class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-30 transition-colors duration-200">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <!-- Logo & Brand -->
+                <div class="flex items-center gap-6">
+                    <div class="flex items-center gap-3">
+                        <div class="p-2 bg-red-500 text-white rounded-xl shadow-md flex items-center justify-center">
+                            <i class="fa-solid font-bold fa-file-pdf text-xl"></i>
+                        </div>
+                        <div>
+                            <h1 class="text-lg font-bold leading-tight bg-gradient-to-r from-red-600 to-indigo-600 bg-clip-text text-transparent">PDF Hub</h1>
+                            <p class="text-xs text-gray-500 dark:text-gray-400 hidden sm:block">Quản lý & Đọc Tài liệu PDF</p>
+                        </div>
+                    </div>
+
+                    <!-- Top Navigation Tabs -->
+                    <nav class="flex items-center gap-1 bg-gray-100 dark:bg-gray-700/60 p-1 rounded-xl">
+                        <button data-filter-view="all" class="nav-view-btn active px-3 py-1.5 rounded-lg text-xs font-semibold transition-all bg-white dark:bg-gray-800 text-red-600 dark:text-red-400 shadow-sm flex items-center gap-2">
+                            <i class="fa-solid fa-folder-open"></i> Tất cả File
+                            <span id="badge-count-all" class="px-1.5 py-0.5 rounded-full bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-300 text-[10px]">0</span>
+                        </button>
+                        <button data-filter-view="trash" class="nav-view-btn px-3 py-1.5 rounded-lg text-xs font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-all flex items-center gap-2">
+                            <i class="fa-solid fa-trash-can"></i> Thùng rác
+                            <span id="badge-count-trash" class="px-1.5 py-0.5 rounded-full bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300 text-[10px]">0</span>
+                        </button>
+                    </nav>
+                </div>
+
+                <!-- Global Actions -->
+                <div class="flex items-center gap-2 sm:gap-3">
+                    <!-- Storage Folder Button -->
+                    <button id="btnOpenFolderModal" class="px-3 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 text-xs sm:text-sm font-medium rounded-lg transition-all flex items-center gap-2 max-w-[220px]" title="Thư mục lưu trữ">
+                        <i class="fa-solid fa-hard-drive text-emerald-500"></i>
+                        <span id="folderLabel" class="hidden lg:inline truncate">Thư mục lưu trữ</span>
+                    </button>
+
+                    <!-- Manage Categories Button -->
+                    <button id="btnOpenCategoryModal" class="px-3 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 text-xs sm:text-sm font-medium rounded-lg transition-all flex items-center gap-2">
+                        <i class="fa-solid fa-tags text-indigo-500"></i>
+                        <span class="hidden sm:inline">Quản lý Phân loại</span>
+                    </button>
+
+                    <!-- Upload Button -->
+                    <button id="btnOpenUploadModal" class="px-4 py-2 bg-red-600 hover:bg-red-700 active:scale-95 text-white text-xs sm:text-sm font-medium rounded-lg transition-all shadow-sm flex items-center gap-2">
+                        <i class="fa-solid fa-cloud-arrow-up"></i>
+                        <span>Thêm PDF</span>
+                    </button>
+
+                    <!-- Dark Mode Toggle -->
+                    <button id="btnThemeToggle" class="p-2 rounded-lg text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title="Đổi giao diện">
+                        <i id="themeIcon" class="fa-solid fa-moon text-lg"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Layout -->
+    <div class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+        <!-- Stats Widgets Panel -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm flex items-center gap-4">
+                <div class="p-3 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg">
+                    <i class="fa-solid fa-file-pdf text-2xl"></i>
+                </div>
+                <div>
+                    <div class="text-xs font-medium text-gray-500 dark:text-gray-400">Tổng tài liệu</div>
+                    <div id="statTotalFiles" class="text-2xl font-bold text-gray-800 dark:text-gray-100">0</div>
+                </div>
+            </div>
+
+            <div class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm flex items-center gap-4">
+                <div class="p-3 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-lg">
+                    <i class="fa-solid fa-database text-2xl"></i>
+                </div>
+                <div>
+                    <div class="text-xs font-medium text-gray-500 dark:text-gray-400">Tổng dung lượng</div>
+                    <div id="statTotalSize" class="text-2xl font-bold text-gray-800 dark:text-gray-100">0 MB</div>
+                </div>
+            </div>
+
+            <div class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm flex items-center gap-4">
+                <div class="p-3 bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-lg">
+                    <i class="fa-solid fa-layer-group text-2xl"></i>
+                </div>
+                <div>
+                    <div class="text-xs font-medium text-gray-500 dark:text-gray-400">Số danh mục</div>
+                    <div id="statTotalCategories" class="text-2xl font-bold text-gray-800 dark:text-gray-100">0</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Toolbar: Search Box, Category Chips & View Toggle -->
+        <div class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
+            <!-- Search Input -->
+            <div class="relative w-full md:w-80">
+                <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+                <input type="text" id="searchInput" placeholder="Tìm tên file hoặc ghi chú..." class="w-full pl-9 pr-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 dark:text-white transition-all">
+            </div>
+
+            <!-- Horizontal Category Chips & View Mode Buttons -->
+            <div class="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end overflow-hidden">
+                <!-- Category Quick Filter Pills -->
+                <div id="categoryChipsContainer" class="flex items-center gap-1.5 overflow-x-auto custom-scrollbar pb-1 max-w-full">
+                    <!-- Category pills populated by JS -->
+                </div>
+
+                <!-- View Toggle (Grid / List) -->
+                <div class="flex items-center bg-gray-100 dark:bg-gray-700 p-1 rounded-lg flex-shrink-0">
+                    <button id="btnGridView" class="p-1.5 rounded text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-600 shadow-sm transition-all" title="Xem dạng Lưới">
+                        <i class="fa-solid fa-border-all text-sm"></i>
+                    </button>
+                    <button id="btnListView" class="p-1.5 rounded text-gray-600 dark:text-gray-300 hover:bg-white dark:hover:bg-gray-600 transition-all" title="Xem dạng Danh sách">
+                        <i class="fa-solid fa-list text-sm"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Trash toolbar (chỉ hiện ở tab Thùng rác) -->
+        <div id="trashBar" class="hidden items-center justify-between bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/50 text-amber-800 dark:text-amber-200 rounded-xl px-4 py-3 text-sm">
+            <span><i class="fa-solid fa-circle-info mr-2"></i>File trong thùng rác vẫn nằm trong thư mục lưu trữ cho đến khi bạn xóa vĩnh viễn.</span>
+            <button id="btnEmptyTrash" class="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5">
+                <i class="fa-solid fa-broom"></i> Dọn sạch thùng rác
+            </button>
+        </div>
+
+        <!-- Empty State Warning / Placeholder -->
+        <div id="emptyState" class="hidden flex-col items-center justify-center py-16 px-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm text-center">
+            <div class="p-4 bg-red-50 dark:bg-red-900/20 text-red-500 rounded-full mb-4">
+                <i class="fa-solid fa-folder-open text-4xl"></i>
+            </div>
+            <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-1">Không tìm thấy tài liệu PDF nào</h3>
+            <p class="text-sm text-gray-500 dark:text-gray-400 max-w-md mb-4">Chưa có file PDF nào hoặc không có kết quả phù hợp với từ khóa tìm kiếm.</p>
+            <button id="btnEmptyUpload" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors shadow-sm inline-flex items-center gap-2">
+                <i class="fa-solid fa-upload"></i> Thêm PDF ngay
+            </button>
+        </div>
+
+        <!-- PDF File Display Container -->
+        <div id="fileContainer" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <!-- Rendered dynamically by JS -->
+        </div>
+    </div>
+
+    <!-- FULLSCREEN PDF READER MODAL -->
+    <div id="pdfReaderModal" class="fixed inset-0 z-50 hidden flex flex-col bg-gray-900/95 backdrop-blur-md">
+        <div class="bg-gray-800 border-b border-gray-700 text-white px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 shadow-md">
+            <div class="flex items-center gap-3 truncate max-w-md">
+                <i class="fa-solid fa-file-pdf text-red-500 text-xl flex-shrink-0"></i>
+                <span id="readerFileName" class="font-semibold text-sm truncate">Tên File PDF</span>
+            </div>
+
+            <div class="flex items-center gap-2 sm:gap-4 bg-gray-900/60 px-3 py-1.5 rounded-lg text-xs">
+                <div class="flex items-center gap-1.5">
+                    <button id="btnReaderPrevPage" class="p-1 hover:bg-gray-700 rounded text-gray-300 hover:text-white transition-colors" title="Trang trước">
+                        <i class="fa-solid fa-chevron-left"></i>
+                    </button>
+                    <div class="flex items-center gap-1 text-gray-300">
+                        <input type="number" id="readerCurrentPageInput" value="1" min="1" class="w-12 text-center bg-gray-800 border border-gray-600 rounded px-1 py-0.5 text-xs text-white focus:outline-none focus:border-red-500">
+                        <span>/ <span id="readerTotalPages">1</span></span>
+                    </div>
+                    <button id="btnReaderNextPage" class="p-1 hover:bg-gray-700 rounded text-gray-300 hover:text-white transition-colors" title="Trang sau">
+                        <i class="fa-solid fa-chevron-right"></i>
+                    </button>
+                </div>
+
+                <div class="h-4 w-px bg-gray-700"></div>
+
+                <div class="flex items-center gap-1.5">
+                    <button id="btnReaderZoomOut" class="p-1 hover:bg-gray-700 rounded text-gray-300 hover:text-white transition-colors" title="Thu nhỏ">
+                        <i class="fa-solid fa-minus"></i>
+                    </button>
+                    <span id="readerZoomLevel" class="text-gray-300 font-mono w-12 text-center">100%</span>
+                    <button id="btnReaderZoomIn" class="p-1 hover:bg-gray-700 rounded text-gray-300 hover:text-white transition-colors" title="Phóng to">
+                        <i class="fa-solid fa-plus"></i>
+                    </button>
+                    <button id="btnReaderResetZoom" class="px-2 py-0.5 hover:bg-gray-700 rounded text-gray-300 hover:text-white transition-colors text-[11px]" title="Vừa chiều rộng">
+                        Fit
+                    </button>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-2">
+                <button id="btnReaderOpenExternal" class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5" title="Mở bằng ứng dụng PDF mặc định của máy">
+                    <i class="fa-solid fa-arrow-up-right-from-square"></i> Mở ngoài
+                </button>
+                <button id="btnReaderDownload" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5">
+                    <i class="fa-solid fa-download"></i> Lưu bản sao
+                </button>
+                <button id="btnCloseReaderModal" class="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors" title="Đóng (Esc)">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+        </div>
+
+        <div class="flex-1 overflow-auto p-4 flex items-start custom-scrollbar relative" id="readerViewport">
+            <div id="readerLoading" class="absolute inset-0 flex flex-col items-center justify-center text-white bg-gray-900/80 z-10">
+                <i class="fa-solid fa-circle-notch fa-spin text-4xl text-red-500 mb-3"></i>
+                <p class="text-sm font-medium">Đang tải tài liệu PDF...</p>
+            </div>
+
+            <div class="shadow-2xl rounded bg-white overflow-hidden border border-gray-700 mx-auto flex-shrink-0">
+                <canvas id="readerCanvas"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Quản lý Phân loại -->
+    <div id="categoryModal" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm transition-opacity">
+        <div class="bg-white dark:bg-gray-800 rounded-2xl max-w-md w-full p-6 shadow-xl border border-gray-200 dark:border-gray-700 space-y-4">
+            <div class="flex justify-between items-center border-b pb-3 border-gray-200 dark:border-gray-700">
+                <h3 class="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                    <i class="fa-solid fa-tags text-indigo-500"></i> Quản lý Phân loại
+                </h3>
+                <button class="btnCloseCategoryModal text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+
+            <p class="text-xs text-gray-500 dark:text-gray-400">Mỗi phân loại là một thư mục con trong thư mục lưu trữ.</p>
+
+            <form id="addCategoryForm" class="flex gap-2">
+                <input type="text" id="newCategoryNameInput" placeholder="Tên phân loại mới..." required class="flex-1 px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white">
+                <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-1.5 flex-shrink-0">
+                    <i class="fa-solid fa-plus"></i> Thêm
+                </button>
+            </form>
+
+            <div class="space-y-2">
+                <label class="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Danh sách hiện tại</label>
+                <div id="categoryManageList" class="max-h-60 overflow-y-auto space-y-1.5 custom-scrollbar pr-1"></div>
+            </div>
+
+            <div class="flex justify-end pt-3 border-t border-gray-200 dark:border-gray-700">
+                <button type="button" class="btnCloseCategoryModal px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">Đóng</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Thư mục lưu trữ -->
+    <div id="folderModal" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm transition-opacity">
+        <div class="bg-white dark:bg-gray-800 rounded-2xl max-w-lg w-full p-6 shadow-xl border border-gray-200 dark:border-gray-700 space-y-4">
+            <div class="flex justify-between items-center border-b pb-3 border-gray-200 dark:border-gray-700">
+                <h3 class="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                    <i class="fa-solid fa-hard-drive text-emerald-500"></i> Thư mục lưu trữ
+                </h3>
+                <button class="btnCloseFolderModal text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+
+            <div>
+                <label class="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Đường dẫn hiện tại</label>
+                <div id="folderModalPath" class="px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm font-mono break-all">—</div>
+            </div>
+
+            <p class="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+                Tài liệu được lưu thành file PDF thật trong thư mục này (chia thư mục con theo phân loại).
+                Khi đổi sang thư mục khác, app sẽ mở thư viện ở thư mục đó — file cũ <b>không</b> bị di chuyển hay xóa.
+            </p>
+
+            <div class="flex flex-wrap justify-end gap-2 pt-3 border-t border-gray-200 dark:border-gray-700">
+                <button id="btnOpenLibraryFolder" type="button" class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors flex items-center gap-2">
+                    <i class="fa-solid fa-folder-open"></i> Mở trong Explorer
+                </button>
+                <button id="btnChangeFolder" type="button" class="px-4 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors flex items-center gap-2">
+                    <i class="fa-solid fa-folder-tree"></i> Đổi thư mục...
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Upload Modal -->
+    <div id="uploadModal" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm transition-opacity">
+        <div class="bg-white dark:bg-gray-800 rounded-2xl max-w-lg w-full p-6 shadow-xl border border-gray-200 dark:border-gray-700 space-y-5">
+            <div class="flex justify-between items-center border-b pb-3 border-gray-200 dark:border-gray-700">
+                <h3 class="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                    <i class="fa-solid fa-cloud-arrow-up text-red-600"></i> Thêm file PDF
+                </h3>
+                <button class="btnCloseModal text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+
+            <div id="dropZone" class="border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-red-500 dark:hover:border-red-500 rounded-xl p-8 text-center transition-colors cursor-pointer bg-gray-50 dark:bg-gray-900/50">
+                <i class="fa-solid fa-file-pdf text-5xl text-red-500 mb-3 animate-bounce"></i>
+                <p class="text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Kéo và thả file PDF vào đây</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">hoặc nhấn để chọn từ máy tính — file sẽ được chép vào thư mục lưu trữ</p>
+                <input type="file" id="fileInput" accept="application/pdf,.pdf" multiple class="hidden">
+                <button type="button" class="px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 text-xs font-semibold rounded-lg transition-colors">
+                    Chọn tệp tin
+                </button>
+            </div>
+
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">Phân loại tài liệu</label>
+                    <select id="uploadCategorySelect" class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 dark:text-white"></select>
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-3 border-t pt-3 border-gray-200 dark:border-gray-700">
+                <button type="button" class="btnCloseModal px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">Hủy</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirm Modal -->
+    <div id="confirmModal" class="fixed inset-0 z-[70] hidden flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <div class="bg-white dark:bg-gray-800 rounded-2xl max-w-sm w-full p-6 shadow-xl border border-gray-200 dark:border-gray-700 space-y-4">
+            <div class="flex items-start gap-3">
+                <div class="p-2.5 bg-red-100 dark:bg-red-900/30 text-red-600 rounded-full flex-shrink-0">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                </div>
+                <p id="confirmMessage" class="text-sm text-gray-700 dark:text-gray-200 leading-relaxed pt-1"></p>
+            </div>
+            <div class="flex justify-end gap-2">
+                <button id="btnConfirmCancel" type="button" class="px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">Hủy</button>
+                <button id="btnConfirmOk" type="button" class="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors">Xác nhận</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Welcome / chọn thư mục lưu trữ lần đầu -->
+    <div id="welcomeScreen" class="fixed inset-0 z-[60] hidden flex items-center justify-center p-6 bg-gray-50 dark:bg-gray-900">
+        <div class="max-w-md w-full text-center space-y-5">
+            <div class="inline-flex p-4 bg-red-500 text-white rounded-2xl shadow-lg">
+                <i class="fa-solid fa-file-pdf text-4xl"></i>
+            </div>
+            <div>
+                <h2 class="text-2xl font-bold">Chào mừng đến với PDF Hub</h2>
+                <p class="text-sm text-gray-500 dark:text-gray-400 mt-2 leading-relaxed">
+                    Hãy chọn thư mục trên máy tính để lưu tài liệu. Các file PDF sẽ được lưu trực tiếp vào đó, bạn có thể mở bằng bất kỳ phần mềm nào.
+                </p>
+            </div>
+            <p id="welcomeError" class="hidden text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-lg px-3 py-2"></p>
+            <button id="btnWelcomeChoose" class="px-6 py-3 bg-red-600 hover:bg-red-700 active:scale-95 text-white font-semibold rounded-xl transition-all shadow-md inline-flex items-center gap-2">
+                <i class="fa-solid fa-folder-tree"></i> Chọn thư mục lưu trữ
+            </button>
+        </div>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="fixed bottom-5 right-5 z-[80] hidden flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg text-white transition-all transform translate-y-full">
+        <i id="toastIcon" class="fa-solid text-xl"></i>
+        <span id="toastMessage" class="text-sm font-medium"></span>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
