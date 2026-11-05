@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; worker-src 'self' blob:; connect-src 'self'">
-    <title>PDF Hub</title>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: dochub:; media-src 'self' blob: dochub:; font-src 'self'; worker-src 'self' blob:; connect-src 'self' dochub:">
+    <title>Documents Hub</title>
     <link rel="stylesheet" href="vendor/fonts/400.css">
     <link rel="stylesheet" href="vendor/fonts/500.css">
     <link rel="stylesheet" href="vendor/fonts/600.css">
@@ -25,7 +25,7 @@
                 <path d="M9 6.5h7l4 4V21a1.5 1.5 0 0 1-1.5 1.5H9A1.5 1.5 0 0 1 7.5 21V8A1.5 1.5 0 0 1 9 6.5Z" fill="rgb(var(--accent-ink))"/>
                 <path d="M16 6.5v4h4Z" fill="rgb(var(--accent))" opacity=".4"/>
             </svg>
-            <span class="text-[15px] font-semibold tracking-tight">PDF Hub</span>
+            <span class="text-[15px] font-semibold tracking-tight">Documents Hub</span>
         </div>
 
         <nav class="px-3 pt-2 space-y-0.5" aria-label="Thư viện">
@@ -74,19 +74,32 @@
             </div>
             <button id="btnOpenUploadModal" class="no-drag btn-primary shrink-0">
                 <i class="fa-solid fa-plus text-xs"></i>
-                <span>Thêm PDF</span>
+                <span>Thêm tệp</span>
             </button>
         </header>
 
         <div class="shrink-0 pl-8 pr-8 pt-1 pb-5 flex items-center gap-3">
-            <div class="relative flex-1 max-w-md">
+            <div class="relative flex-1 min-w-0 max-w-md">
                 <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-muted text-xs pointer-events-none"></i>
                 <input type="text" id="searchInput" placeholder="Tìm theo tên hoặc ghi chú" class="field !pl-9 !pr-14" aria-label="Tìm tài liệu" autocomplete="off" spellcheck="false">
                 <kbd id="searchHint" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] text-muted border border-line rounded px-1.5 py-px font-sans">Ctrl K</kbd>
             </div>
 
             <label class="flex items-center gap-2 text-[13px] text-muted ml-auto">
-                <span class="hidden md:inline">Sắp xếp</span>
+                <span class="hidden lg:inline">Loại</span>
+                <select id="typeSelect" class="field !w-auto !py-1.5 !pr-8 text-[13px]" aria-label="Lọc theo loại tệp">
+                    <option value="all">Tất cả loại</option>
+                    <option value="pdf">PDF</option>
+                    <option value="text">Văn bản và Office</option>
+                    <option value="image">Hình ảnh</option>
+                    <option value="video">Video</option>
+                    <option value="audio">Âm thanh</option>
+                    <option value="other">Khác</option>
+                </select>
+            </label>
+
+            <label class="flex items-center gap-2 text-[13px] text-muted">
+                <span class="hidden lg:inline">Sắp xếp</span>
                 <select id="sortSelect" class="field !w-auto !py-1.5 !pr-8 text-[13px]">
                     <option value="newest">Mới nhất</option>
                     <option value="oldest">Cũ nhất</option>
@@ -107,7 +120,7 @@
 
         <div id="contentScroll" class="flex-1 min-h-0 overflow-y-auto scroll pl-8 pr-8 pb-10">
             <div id="trashBar" class="hidden items-center justify-between gap-4 mb-6 rounded-lg bg-sunken/70 px-4 py-3 text-[13px]">
-                <span class="text-muted">File trong thùng rác vẫn nằm trong thư mục lưu trữ cho đến khi bạn xóa vĩnh viễn.</span>
+                <span class="text-muted">Tệp trong thùng rác vẫn nằm trong thư mục lưu trữ cho đến khi bạn xóa vĩnh viễn.</span>
                 <button id="btnEmptyTrash" class="btn-quiet shrink-0 !h-8"><i class="fa-solid fa-broom text-xs"></i> Dọn sạch thùng rác</button>
             </div>
 
@@ -118,17 +131,17 @@
     </main>
 </div>
 
-<!-- ===================== Trình đọc PDF ===================== -->
-<div id="pdfReaderModal" class="dark fixed inset-0 z-50 hidden flex flex-col bg-desk text-ink">
+<!-- ===================== Trình xem tệp ===================== -->
+<div id="viewerModal" class="dark fixed inset-0 z-50 hidden flex flex-col bg-desk text-ink">
     <div class="drag h-[52px] shrink-0 bg-panel border-b border-line flex items-center gap-4 pl-3 safe-right">
         <div class="flex items-center gap-2 min-w-0 flex-1">
-            <button id="btnCloseReaderModal" class="no-drag tool-btn shrink-0" title="Đóng (Esc)" aria-label="Đóng trình đọc">
+            <button id="btnCloseViewer" class="no-drag tool-btn shrink-0" title="Đóng (Esc)" aria-label="Đóng trình xem">
                 <i class="fa-solid fa-arrow-left"></i>
             </button>
-            <span id="readerFileName" class="truncate text-[14px] font-medium">Tên file</span>
+            <span id="viewerFileName" class="truncate text-[14px] font-medium">Tên tệp</span>
         </div>
 
-        <div class="no-drag flex items-center gap-1 text-[13px]">
+        <div id="pdfControls" class="no-drag hidden items-center gap-1 text-[13px]">
             <button id="btnReaderPrevPage" class="tool-btn" title="Trang trước" aria-label="Trang trước"><i class="fa-solid fa-chevron-up text-xs"></i></button>
             <input type="number" id="readerCurrentPageInput" value="1" min="1" class="w-12 text-center rounded-md bg-sunken px-1 py-1 text-[13px] tabular-nums focus:outline-none focus:ring-2 focus:ring-accent" aria-label="Trang hiện tại">
             <span class="text-muted tabular-nums pr-1">trên <span id="readerTotalPages">1</span></span>
@@ -142,21 +155,58 @@
             <button id="btnReaderResetZoom" class="btn-quiet !h-8 !px-2.5 ml-1 text-[13px]" title="Vừa chiều rộng">Vừa rộng</button>
         </div>
 
+        <div id="imageControls" class="no-drag hidden items-center gap-1 text-[13px]">
+            <button id="btnImageFit" class="btn-quiet !h-8 !px-3 text-[13px]">Kích thước thật</button>
+        </div>
+
         <div class="no-drag flex items-center gap-2 flex-1 justify-end">
-            <button id="btnReaderOpenExternal" class="tool-btn" title="Mở bằng ứng dụng PDF mặc định" aria-label="Mở bằng ứng dụng PDF mặc định">
+            <button id="btnViewerReveal" class="tool-btn" title="Hiện trong thư mục" aria-label="Hiện trong thư mục">
+                <i class="fa-solid fa-folder-open text-[13px]"></i>
+            </button>
+            <button id="btnViewerOpenExternal" class="tool-btn" title="Mở bằng ứng dụng mặc định" aria-label="Mở bằng ứng dụng mặc định">
                 <i class="fa-solid fa-arrow-up-right-from-square text-[13px]"></i>
             </button>
-            <button id="btnReaderDownload" class="btn-quiet !h-8"><i class="fa-solid fa-download text-xs"></i> Lưu bản sao</button>
+            <button id="btnViewerSave" class="btn-quiet !h-8"><i class="fa-solid fa-download text-xs"></i> Lưu bản sao</button>
         </div>
     </div>
 
-    <div class="flex-1 overflow-auto scroll bg-sunken relative" id="readerViewport">
-        <div id="readerLoading" class="absolute inset-0 z-10 flex flex-col items-center justify-center bg-sunken/80 text-muted">
+    <div class="flex-1 overflow-auto scroll bg-sunken relative" id="viewerViewport">
+        <div id="viewerLoading" class="absolute inset-0 z-10 flex flex-col items-center justify-center bg-sunken/80 text-muted">
             <i class="fa-solid fa-circle-notch fa-spin text-2xl mb-3"></i>
-            <p class="text-[13px]">Đang mở tài liệu</p>
+            <p class="text-[13px]">Đang mở tệp</p>
         </div>
-        <div class="sheet w-fit mx-auto my-8 overflow-hidden">
-            <canvas id="readerCanvas" class="block"></canvas>
+
+        <div id="viewerPdf" class="hidden">
+            <div class="sheet w-fit mx-auto my-8 overflow-hidden">
+                <canvas id="readerCanvas" class="block"></canvas>
+            </div>
+        </div>
+
+        <div id="viewerImage" class="hidden min-h-full p-8">
+            <img id="viewerImg" alt="" class="m-auto block rounded-sheet shadow-pop" draggable="false">
+        </div>
+
+        <div id="viewerMedia" class="hidden min-h-full flex-col items-center justify-center p-8">
+            <div id="viewerMediaHost" class="flex w-full flex-col items-center"></div>
+        </div>
+
+        <div id="viewerText" class="hidden mx-auto my-8 w-full max-w-4xl px-8">
+            <div class="rounded-lg bg-panel shadow-sheet">
+                <pre id="viewerTextBody" class="select-text whitespace-pre-wrap break-words p-6 font-mono text-[13px] leading-relaxed"></pre>
+            </div>
+            <p id="viewerTextNote" class="mt-4 hidden text-center text-[13px] text-muted"></p>
+        </div>
+
+        <div id="viewerFallback" class="hidden min-h-full items-center justify-center p-8">
+            <div class="w-full max-w-sm text-center">
+                <span id="fallbackIcon" class="mx-auto mb-5 grid h-16 w-16 place-items-center rounded-2xl bg-panel text-2xl shadow-sheet"></span>
+                <h2 id="fallbackTitle" class="text-[17px] font-semibold break-words"></h2>
+                <p id="fallbackText" class="mt-2 text-[13px] leading-relaxed text-muted"></p>
+                <div class="mt-6 flex flex-wrap justify-center gap-2">
+                    <button id="btnFallbackOpen" class="btn-primary"><i class="fa-solid fa-arrow-up-right-from-square text-xs"></i> Mở bằng ứng dụng mặc định</button>
+                    <button id="btnFallbackReveal" class="btn-quiet">Hiện trong thư mục</button>
+                </div>
+            </div>
         </div>
     </div>
 </div>
@@ -194,8 +244,9 @@
         <div class="px-5 pb-5 space-y-4">
             <div id="folderModalPath" class="rounded-lg bg-sunken/70 px-3 py-2.5 text-[13px] break-all select-text">—</div>
             <p class="text-[13px] text-muted leading-relaxed">
-                Tài liệu được lưu thành file PDF thật trong thư mục này, chia thư mục con theo phân loại.
-                Khi đổi sang thư mục khác, PDF Hub mở thư viện ở đó. File ở thư mục cũ không bị di chuyển hay xóa.
+                Tệp được lưu nguyên bản trong thư mục này, chia thư mục con theo phân loại.
+                Khi đổi sang thư mục khác, Documents Hub mở thư viện ở đó. Tệp ở thư mục cũ không bị di chuyển hay xóa.
+                Nên chọn một thư mục riêng cho thư viện: mọi thư mục con có chứa tệp đều được xem là một phân loại.
             </p>
         </div>
         <div class="flex flex-wrap justify-end gap-2 px-5 py-3 border-t border-line">
@@ -205,19 +256,18 @@
     </div>
 </div>
 
-<!-- ===================== Hộp thoại: Thêm PDF ===================== -->
+<!-- ===================== Hộp thoại: Thêm tệp ===================== -->
 <div id="uploadModal" class="fixed inset-0 z-50 hidden flex items-center justify-center p-6 bg-ink/40">
     <div class="w-full max-w-lg bg-panel rounded-xl shadow-pop" role="dialog" aria-modal="true" aria-labelledby="uploadModalTitle">
         <div class="flex items-center justify-between px-5 pt-4 pb-3">
-            <h2 id="uploadModalTitle" class="text-[16px] font-semibold">Thêm PDF</h2>
+            <h2 id="uploadModalTitle" class="text-[16px] font-semibold">Thêm tệp</h2>
             <button class="btnCloseModal tool-btn" aria-label="Đóng"><i class="fa-solid fa-xmark"></i></button>
         </div>
         <div class="px-5 pb-5 space-y-4">
-            <div id="dropZone" class="rounded-xl border-2 border-dashed border-line hover:border-accent transition-colors cursor-pointer px-6 py-9 text-center" tabindex="0" role="button" aria-label="Chọn file PDF">
+            <div id="dropZone" class="rounded-xl border-2 border-dashed border-line hover:border-accent transition-colors cursor-pointer px-6 py-9 text-center" tabindex="0" role="button" aria-label="Chọn tệp để thêm">
                 <i class="fa-solid fa-file-arrow-up text-3xl text-accent mb-3"></i>
-                <p class="text-[14px] font-medium">Kéo file PDF vào đây hoặc bấm để chọn</p>
-                <p class="text-[13px] text-muted mt-1">File được chép vào thư mục lưu trữ của bạn.</p>
-                <input type="file" id="fileInput" accept="application/pdf,.pdf" multiple class="hidden">
+                <p class="text-[14px] font-medium">Kéo tệp vào đây hoặc bấm để chọn</p>
+                <p class="text-[13px] text-muted mt-1">PDF, ảnh, video, âm thanh, văn bản và mọi định dạng khác. Tệp được chép vào thư mục lưu trữ của bạn.</p>
             </div>
 
             <label class="block">
@@ -253,11 +303,11 @@
                 <path d="M16 6.5v4h4Z" fill="rgb(var(--accent))" opacity=".4"/>
             </svg>
             <h2 class="text-[26px] font-semibold tracking-tight leading-tight">Chọn nơi lưu tài liệu của bạn</h2>
-            <p class="mt-3 text-[14px] text-muted leading-relaxed">PDF Hub không giữ file trong một kho riêng. Mọi tài liệu nằm ngay trong thư mục bạn chọn.</p>
+            <p class="mt-3 text-[14px] text-muted leading-relaxed">Documents Hub không giữ tệp trong một kho riêng. Mọi tệp nằm ngay trong thư mục bạn chọn.</p>
 
             <ul class="mt-6 space-y-3 text-[14px]">
-                <li class="flex gap-3"><i class="fa-solid fa-file-pdf w-4 mt-1 text-accent"></i><span>File PDF thật, mở được bằng mọi phần mềm khác.</span></li>
-                <li class="flex gap-3"><i class="fa-solid fa-folder-tree w-4 mt-1 text-accent"></i><span>Mỗi phân loại là một thư mục con.</span></li>
+                <li class="flex gap-3"><i class="fa-solid fa-file-video w-4 mt-1 text-accent"></i><span>PDF, ảnh, video, âm thanh, văn bản và mọi định dạng khác.</span></li>
+                <li class="flex gap-3"><i class="fa-solid fa-folder-tree w-4 mt-1 text-accent"></i><span>Tệp nguyên bản, mở được bằng mọi phần mềm khác. Mỗi phân loại là một thư mục con.</span></li>
                 <li class="flex gap-3"><i class="fa-solid fa-desktop w-4 mt-1 text-accent"></i><span>Dữ liệu ở lại trên máy bạn, không gửi đi đâu.</span></li>
             </ul>
 
@@ -270,9 +320,17 @@
     </div>
 </div>
 
-<!-- ===================== Lớp thả file ===================== -->
+<!-- ===================== Lớp thả tệp ===================== -->
 <div id="dropOverlay" class="pointer-events-none fixed inset-3 z-[65] hidden items-center justify-center rounded-2xl border-2 border-dashed border-accent bg-accent/10 backdrop-blur-[2px]">
-    <p class="rounded-xl bg-panel px-6 py-4 text-[15px] shadow-pop">Thả file PDF để thêm vào <b id="dropTarget">phân loại</b></p>
+    <p class="rounded-xl bg-panel px-6 py-4 text-[15px] shadow-pop">Thả tệp để thêm vào <b id="dropTarget">phân loại</b></p>
+</div>
+
+<!-- ===================== Đang xử lý ===================== -->
+<div id="busy" role="status" aria-live="polite" class="pointer-events-none fixed bottom-6 left-1/2 z-[85] hidden -translate-x-1/2">
+    <div class="flex items-center gap-3 rounded-xl bg-ink text-desk pl-4 pr-5 py-3 shadow-pop">
+        <i class="fa-solid fa-circle-notch fa-spin"></i>
+        <span id="busyText" class="text-[13px] font-medium"></span>
+    </div>
 </div>
 
 <!-- ===================== Thông báo ===================== -->

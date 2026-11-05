@@ -1,19 +1,20 @@
 {
-  "name": "pdf-hub",
-  "version": "1.0.0",
-  "description": "PDF Hub - Quản lý & đọc tài liệu PDF, lưu trực tiếp vào thư mục trên ổ đĩa",
+  "name": "documents-hub",
+  "productName": "Documents Hub",
+  "version": "2.0.0",
+  "description": "Documents Hub - Quản lý, xem và phát mọi loại tệp (PDF, ảnh, video, âm thanh, văn bản...), lưu trực tiếp vào thư mục trên ổ đĩa",
   "main": "main.js",
   "author": "SDevice VN",
   "license": "MIT",
   "scripts": {
     "prepare:assets": "node scripts/prepare-assets.js && tailwindcss -i src/input.css -o src/styles.css --minify",
-    "test": "node scripts/test-library.js",
+    "test": "node scripts/test-library.js && node scripts/test-files.js",
     "start": "npm run prepare:assets && electron .",
     "dist": "npm run prepare:assets && electron-builder --win --x64 --publish never"
   },
   "build": {
-    "appId": "vn.sdevice.pdfhub",
-    "productName": "PDF Hub",
+    "appId": "vn.sdevice.documentshub",
+    "productName": "Documents Hub",
     "directories": {
       "output": "dist"
     },

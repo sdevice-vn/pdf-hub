@@ -2,7 +2,7 @@
 (() => {
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker.min.js';
 
-    const api = window.pdfHub;
+    const api = window.docHub;
     const $ = (id) => document.getElementById(id);
 
     const store = {
@@ -14,10 +14,53 @@
         }
     };
 
+    // --- LOẠI TỆP ---
+    const KIND_INFO = {
+        pdf:     { label: 'PDF',      icon: 'fa-file-pdf',    color: '#C8452B' },
+        image:   { label: 'Hình ảnh', icon: 'fa-file-image',  color: '#2E9BD6' },
+        video:   { label: 'Video',    icon: 'fa-file-video',  color: '#7A4FD3' },
+        audio:   { label: 'Âm thanh', icon: 'fa-file-audio',  color: '#D6458A' },
+        text:    { label: 'Văn bản',  icon: 'fa-file-lines',  color: '#5F6F68' },
+        office:  { label: 'Office',   icon: 'fa-file-word',   color: '#2B579A' },
+        archive: { label: 'Tệp nén',  icon: 'fa-file-zipper', color: '#9A7B1E' },
+        other:   { label: 'Tệp',      icon: 'fa-file',        color: '#7B8580' }
+    };
+    const SHEET_EXT = ['xls', 'xlsx', 'xlsm', 'ods', 'numbers'];
+    const SLIDE_EXT = ['ppt', 'pptx', 'pps', 'ppsx', 'odp', 'key'];
+
+    // Bộ lọc loại trong thanh công cụ -> các kind thật
+    const TYPE_GROUPS = {
+        pdf: ['pdf'],
+        text: ['text', 'office'],
+        image: ['image'],
+        video: ['video'],
+        audio: ['audio'],
+        other: ['archive', 'other']
+    };
+    const THUMB_KINDS = new Set(['pdf', 'image', 'video']); // loại có ảnh xem trước thật
+
+    const extOf = (name) => {
+        const i = String(name).lastIndexOf('.');
+        return i > 0 ? String(name).slice(i + 1).toLowerCase() : '';
+    };
+
+    function kindInfo(file) {
+        if (file.kind === 'office') {
+            const e = extOf(file.name);
+            if (SHEET_EXT.includes(e)) return { label: 'Bảng tính', icon: 'fa-file-excel', color: '#217346' };
+            if (SLIDE_EXT.includes(e)) return { label: 'Trình chiếu', icon: 'fa-file-powerpoint', color: '#C43E1C' };
+            return { label: 'Văn bản', icon: 'fa-file-word', color: '#2B579A' };
+        }
+        return KIND_INFO[file.kind] || KIND_INFO.other;
+    }
+
+    const mediaUrl = (id) => `dochub://file/${encodeURIComponent(id)}`;
+
     // --- STATE ---
     const SORTS = ['newest', 'oldest', 'name', 'size'];
     const state = {
         files: [],
+        byId: new Map(),
         categories: [],
         catColors: {},
         libraryPath: '',
@@ -25,16 +68,18 @@
 
         viewMode: ['grid', 'list'].includes(store.get('viewMode', 'grid')) ? store.get('viewMode', 'grid') : 'grid',
         sortBy: SORTS.includes(store.get('sortBy', 'newest')) ? store.get('sortBy', 'newest') : 'newest',
+        typeFilter: 'all',
         nav: 'all',              // 'all' | 'trash'
         selectedCategory: 'ALL', // 'ALL' | tên phân loại
         searchQuery: '',
         editingCategory: null,
 
-        // Reader
+        // Trình xem
+        viewerFile: null,
         readerPdfDoc: null,
         readerCurrentPage: 1,
         readerZoomScale: 1.2,
-        readerCurrentFile: null
+        imageFit: true
     };
 
     const fileContainer = $('fileContainer');
@@ -49,7 +94,7 @@
     const welcomeScreen = $('welcomeScreen');
     const contentScroll = $('contentScroll');
 
-    // --- UTILITIES ---
+    // --- TIỆN ÍCH ---
     const escapeHtml = (s) =>
         String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -57,9 +102,18 @@
 
     function formatFileSize(bytes) {
         if (!bytes) return '0 KB';
-        const units = ['B', 'KB', 'MB', 'GB'];
+        const units = ['B', 'KB', 'MB', 'GB', 'TB'];
         const i = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
         return numberFormat.format(bytes / Math.pow(1024, i)) + ' ' + units[i];
+    }
+
+    function formatDuration(sec) {
+        sec = Math.max(0, Math.round(sec));
+        const h = Math.floor(sec / 3600);
+        const m = Math.floor((sec % 3600) / 60);
+        const s = sec % 60;
+        const pad = (n) => String(n).padStart(2, '0');
+        return h ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
     }
 
     function formatDate(timestamp) {
@@ -97,7 +151,7 @@
     }
     const catColor = (name) => state.catColors[name] || '#8A8F8C';
 
-    // --- TOAST ---
+    // --- THÔNG BÁO ---
     let toastTimer = null;
     function showToast(message, type = 'success') {
         const toast = $('toast');
@@ -110,9 +164,19 @@
         toastTimer = setTimeout(() => {
             toast.classList.add('opacity-0', 'translate-y-3');
             toast.classList.remove('opacity-100', 'translate-y-0');
-        }, type === 'error' ? 5000 : 3000);
+        }, type === 'error' ? 6000 : 3000);
     }
     const showError = (err) => showToast((err && err.message) || String(err), 'error');
+
+    function setBusy(text) {
+        const box = $('busy');
+        if (text) {
+            $('busyText').textContent = text;
+            box.classList.remove('hidden');
+        } else {
+            box.classList.add('hidden');
+        }
+    }
 
     function confirmDialog(message, okLabel = 'Xác nhận') {
         return new Promise((resolve) => {
@@ -134,6 +198,7 @@
 
     function applySnapshot(snap) {
         state.files = snap.files;
+        state.byId = new Map(snap.files.map((f) => [f.id, f]));
         state.categories = snap.categories;
         state.catColors = computeCategoryColors(snap.categories);
         state.libraryPath = snap.path;
@@ -143,27 +208,28 @@
         }
     }
 
-    // --- THEME ---
-    function setTheme(dark, persist = true) {
-        document.documentElement.classList.toggle('dark', dark);
+    // --- GIAO DIỆN SÁNG/TỐI (preload đã đặt sẵn class "dark" từ cài đặt đã lưu) ---
+    function syncThemeIcon() {
+        const dark = document.documentElement.classList.contains('dark');
         $('themeIcon').className = dark ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
-        if (persist) store.set('theme', dark ? 'dark' : 'light');
+    }
+
+    $('btnThemeToggle').addEventListener('click', () => {
+        const dark = !document.documentElement.classList.contains('dark');
+        document.documentElement.classList.toggle('dark', dark);
+        syncThemeIcon();
         api.setTheme(dark).catch(() => { /* chỉ ảnh hưởng thanh tiêu đề */ });
-    }
+    });
 
-    function initTheme() {
-        const saved = store.get('theme', null);
-        const dark = saved ? saved === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
-        setTheme(dark, false);
-    }
-
-    $('btnThemeToggle').addEventListener('click', () => setTheme(!document.documentElement.classList.contains('dark')));
-
-    // --- DATA VIEW ---
+    // --- DỮ LIỆU HIỂN THỊ ---
     function visibleFiles() {
         let result = state.files.filter((f) => (state.nav === 'trash' ? f.isTrash : !f.isTrash));
         if (state.nav === 'all' && state.selectedCategory !== 'ALL') {
             result = result.filter((f) => f.category === state.selectedCategory);
+        }
+        if (state.typeFilter !== 'all') {
+            const kinds = TYPE_GROUPS[state.typeFilter] || [];
+            result = result.filter((f) => kinds.includes(f.kind));
         }
         const q = state.searchQuery.trim().toLowerCase();
         if (q) {
@@ -178,7 +244,7 @@
         return result.sort(by[state.sortBy]);
     }
 
-    // --- RENDER ---
+    // --- HIỂN THỊ ---
     const NAV_ON = ['bg-sunken', 'text-ink', 'font-medium'];
     const NAV_OFF = ['text-muted', 'hover:bg-sunken/60', 'hover:text-ink'];
 
@@ -224,7 +290,7 @@
         $('folderLabel').textContent = state.libraryPath ? baseName(state.libraryPath) : 'Thư mục lưu trữ';
         $('btnOpenFolderModal').title = state.libraryPath || 'Thư mục lưu trữ';
         const totalBytes = active.reduce((sum, f) => sum + f.size, 0);
-        $('storageMeta').textContent = `${active.length} tài liệu, ${formatFileSize(totalBytes)}`;
+        $('storageMeta').textContent = `${active.length} tệp, ${formatFileSize(totalBytes)}`;
     }
 
     function renderHeader(list) {
@@ -233,7 +299,7 @@
             : state.selectedCategory === 'ALL' ? 'Tất cả tài liệu' : state.selectedCategory;
         $('viewCount').textContent = state.searchQuery.trim()
             ? `${list.length} kết quả`
-            : `${list.length} tài liệu`;
+            : `${list.length} tệp`;
     }
 
     function updateViewControls() {
@@ -246,6 +312,7 @@
             btn.setAttribute('aria-pressed', String(active));
         });
         $('sortSelect').value = state.sortBy;
+        $('typeSelect').value = state.typeFilter;
     }
 
     function updateCategoryDropdowns() {
@@ -265,19 +332,23 @@
         if (state.nav === 'trash') {
             icon = 'fa-trash-can';
             title = 'Thùng rác trống';
-            text = 'File bạn bỏ vào thùng rác sẽ nằm ở đây cho đến khi bạn xóa vĩnh viễn.';
+            text = 'Tệp bạn bỏ vào thùng rác sẽ nằm ở đây cho đến khi bạn xóa vĩnh viễn.';
         } else if (q) {
             icon = 'fa-magnifying-glass';
             title = `Không có kết quả cho "${q}"`;
-            text = 'Thử từ khóa khác hoặc chọn Tất cả tài liệu để bỏ lọc phân loại.';
+            text = 'Thử từ khóa khác, hoặc chọn Tất cả loại và Tất cả tài liệu để bỏ bộ lọc.';
+        } else if (state.typeFilter !== 'all') {
+            icon = 'fa-filter';
+            title = 'Không có tệp thuộc loại này';
+            text = 'Chọn Tất cả loại để xem mọi tệp, hoặc thêm tệp mới.';
         } else if (state.selectedCategory !== 'ALL') {
-            title = 'Phân loại này chưa có tài liệu';
-            text = 'Thêm file PDF và chúng sẽ được lưu trong thư mục của phân loại này.';
-            action = `<button data-action="add" class="btn-primary mt-6"><i class="fa-solid fa-plus text-xs"></i> Thêm PDF vào ${escapeHtml(state.selectedCategory)}</button>`;
+            title = 'Phân loại này chưa có tệp';
+            text = 'Thêm tệp và chúng sẽ được lưu trong thư mục của phân loại này.';
+            action = `<button data-action="add" class="btn-primary mt-6"><i class="fa-solid fa-plus text-xs"></i> Thêm tệp vào ${escapeHtml(state.selectedCategory)}</button>`;
         } else {
-            title = 'Chưa có tài liệu nào';
-            text = 'Thêm file PDF để bắt đầu. File được chép vào thư mục lưu trữ của bạn.';
-            action = '<button data-action="add" class="btn-primary mt-6"><i class="fa-solid fa-plus text-xs"></i> Thêm PDF</button>';
+            title = 'Chưa có tệp nào';
+            text = 'Thêm PDF, ảnh, video hoặc bất kỳ tệp nào. Tệp được chép vào thư mục lưu trữ của bạn.';
+            action = '<button data-action="add" class="btn-primary mt-6"><i class="fa-solid fa-plus text-xs"></i> Thêm tệp</button>';
         }
 
         emptyState.innerHTML = `
@@ -318,21 +389,54 @@
         observeThumbs();
     }
 
-    // --- TỜ GIẤY (thumbnail) ---
-    const thumbUrls = new Map();
+    // --- ẢNH XEM TRƯỚC (thumbnail) ---
+    const thumbUrls = new Map();     // id -> blob URL của ảnh JPEG
+    const textPreviews = new Map();  // id -> vài dòng đầu của tệp văn bản
     const thumbFailed = new Set();
     const thumbPending = new Set();
     const thumbQueue = [];
     let thumbActive = 0;
 
-    function thumbMarkup(id) {
-        const url = thumbUrls.get(id);
-        return url
-            ? `<img class="thumb-img h-full w-full object-contain" src="${url}" alt="" draggable="false">`
-            : '<span class="absolute inset-0 grid place-items-center text-black/15"><i class="fa-solid fa-file-pdf text-3xl"></i></span>';
+    // Mặt giấy khi chưa có (hoặc không có) ảnh xem trước: dải màu theo loại, biểu tượng, đuôi tệp
+    function faceMarkup(file, mini) {
+        const info = kindInfo(file);
+        const ext = extOf(file.name).slice(0, 6);
+        return `
+            <span class="absolute inset-0 flex flex-col">
+                <span class="h-1.5 shrink-0" style="background:${info.color}"></span>
+                <span class="grid flex-1 place-items-center"><i class="fa-solid ${info.icon} ${mini ? 'text-lg' : 'text-4xl'}" style="color:${info.color}"></i></span>
+                ${mini || !ext ? '' : `<span class="pb-3 text-center text-xs font-medium" style="color:${info.color}">.${escapeHtml(ext)}</span>`}
+            </span>`;
     }
 
-    const stackClass = (file) => (file.pageCount >= 5 ? 'stack-2' : file.pageCount >= 2 ? 'stack-1' : '');
+    function thumbMarkup(file, mini = false) {
+        const url = thumbUrls.get(file.id);
+        if (url) {
+            const fit = file.kind === 'pdf' ? 'object-contain' : 'object-cover';
+            let html = `<img class="thumb-img h-full w-full ${fit}" src="${url}" alt="" draggable="false">`;
+            if (file.kind === 'video' && !mini) {
+                html += `
+                    <span class="absolute inset-x-0 bottom-0 flex items-center justify-between bg-gradient-to-t from-black/70 to-transparent px-2 pb-1.5 pt-6 text-[11px] text-white">
+                        <i class="fa-solid fa-play text-[9px]"></i>
+                        ${file.duration > 0 ? `<span class="tabular-nums">${formatDuration(file.duration)}</span>` : ''}
+                    </span>`;
+            }
+            return html;
+        }
+        if (file.kind === 'text' && textPreviews.has(file.id)) {
+            const info = kindInfo(file);
+            return `
+                <span class="absolute inset-x-0 top-0 h-1.5" style="background:${info.color}"></span>
+                <pre class="thumb-img absolute inset-0 m-0 overflow-hidden whitespace-pre px-2.5 pb-2 pt-4 font-mono ${mini ? 'text-[3px]' : 'text-[5.5px]'} leading-[1.45] text-black/70">${escapeHtml(textPreviews.get(file.id))}</pre>`;
+        }
+        return faceMarkup(file, mini);
+    }
+
+    function needsThumb(file) {
+        if (!file || thumbFailed.has(file.id)) return false;
+        if (file.kind === 'text') return !textPreviews.has(file.id);
+        return THUMB_KINDS.has(file.kind) && !thumbUrls.has(file.id);
+    }
 
     const thumbObserver = new IntersectionObserver((entries) => {
         for (const entry of entries) {
@@ -344,12 +448,12 @@
 
     function observeThumbs() {
         fileContainer.querySelectorAll('[data-thumb-id]').forEach((el) => {
-            if (!thumbUrls.has(el.dataset.thumbId) && !thumbFailed.has(el.dataset.thumbId)) thumbObserver.observe(el);
+            if (needsThumb(state.byId.get(el.dataset.thumbId))) thumbObserver.observe(el);
         });
     }
 
     function requestThumb(id) {
-        if (thumbUrls.has(id) || thumbFailed.has(id) || thumbPending.has(id)) return;
+        if (thumbPending.has(id) || !needsThumb(state.byId.get(id))) return;
         thumbPending.add(id);
         thumbQueue.push(id);
         pumpThumbs();
@@ -367,29 +471,85 @@
         }
     }
 
+    function refreshThumbEls(id) {
+        const file = state.byId.get(id);
+        if (!file) return;
+        document.querySelectorAll(`[data-thumb-id="${id}"]`).forEach((el) => {
+            el.innerHTML = thumbMarkup(file, el.dataset.mini === '1');
+        });
+    }
+
+    // Ghi nhớ thời lượng video mà không vẽ lại cả danh sách
+    function rememberDuration(file, seconds) {
+        if (!(seconds > 0) || file.duration === seconds) return;
+        file.duration = seconds;
+        api.updateMeta(file.id, { duration: seconds }).then(applySnapshot).catch(() => { /* không quan trọng */ });
+    }
+
     async function loadThumb(id) {
+        const file = state.byId.get(id);
+        if (!file) return;
         try {
-            let bytes = await api.getThumb(id);
-            if (!bytes) {
-                bytes = await generateThumb(id);
-                try { await api.setThumb(id, bytes); } catch (_) { /* vẫn dùng ảnh trong phiên này */ }
+            if (file.kind === 'text') {
+                const r = await api.readText(id, 2400);
+                textPreviews.set(id, r.text.slice(0, 1400));
+            } else {
+                let bytes = await api.getThumb(id);
+                if (!bytes) {
+                    const gen = await generateThumb(file);
+                    bytes = gen.bytes;
+                    try { await api.setThumb(id, bytes); } catch (_) { /* vẫn dùng ảnh trong phiên này */ }
+                    if (gen.duration) rememberDuration(file, gen.duration);
+                }
+                thumbUrls.set(id, URL.createObjectURL(new Blob([bytes], { type: 'image/jpeg' })));
             }
-            thumbUrls.set(id, URL.createObjectURL(new Blob([bytes], { type: 'image/jpeg' })));
-            document.querySelectorAll(`[data-thumb-id="${id}"]`).forEach((el) => { el.innerHTML = thumbMarkup(id); });
+            refreshThumbEls(id);
         } catch (err) {
-            console.warn('Không tạo được ảnh xem trước:', err);
+            console.warn('Không tạo được ảnh xem trước:', file.name, err);
             thumbFailed.add(id);
         }
     }
 
-    async function generateThumb(id) {
+    function generateThumb(file) {
+        if (file.kind === 'pdf') return thumbFromPdf(file.id);
+        if (file.kind === 'image') return thumbFromImage(file.id);
+        return thumbFromVideo(file.id);
+    }
+
+    const THUMB_W = 270;
+    const THUMB_H = 360;
+
+    function coverCanvas() {
+        const canvas = document.createElement('canvas');
+        canvas.width = THUMB_W;
+        canvas.height = THUMB_H;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, THUMB_W, THUMB_H);
+        return { canvas, ctx };
+    }
+
+    function drawCover(ctx, source, sw, sh) {
+        const scale = Math.max(THUMB_W / sw, THUMB_H / sh);
+        const dw = sw * scale;
+        const dh = sh * scale;
+        ctx.drawImage(source, (THUMB_W - dw) / 2, (THUMB_H - dh) / 2, dw, dh);
+    }
+
+    async function canvasToBytes(canvas) {
+        const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.82));
+        canvas.width = canvas.height = 0;
+        if (!blob) throw new Error('Không tạo được ảnh');
+        return new Uint8Array(await blob.arrayBuffer());
+    }
+
+    async function thumbFromPdf(id) {
         const bytes = await api.readFile(id);
         const doc = await pdfjsLib.getDocument({ data: new Uint8Array(bytes) }).promise;
         try {
             const page = await doc.getPage(1);
             const base = page.getViewport({ scale: 1 });
-            const scale = Math.min(360 / base.width, 600 / base.height);
-            const viewport = page.getViewport({ scale });
+            const viewport = page.getViewport({ scale: Math.min(360 / base.width, 600 / base.height) });
 
             const canvas = document.createElement('canvas');
             canvas.width = Math.max(1, Math.floor(viewport.width));
@@ -398,17 +558,75 @@
             ctx.fillStyle = '#fff';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             await page.render({ canvasContext: ctx, viewport }).promise;
-
-            const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.82));
-            canvas.width = canvas.height = 0;
-            if (!blob) throw new Error('Không tạo được ảnh');
-            return new Uint8Array(await blob.arrayBuffer());
+            return { bytes: await canvasToBytes(canvas) };
         } finally {
             doc.destroy();
         }
     }
 
-    // --- THẺ TÀI LIỆU ---
+    async function thumbFromImage(id) {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        await new Promise((resolve, reject) => {
+            img.onload = resolve;
+            img.onerror = () => reject(new Error('Không đọc được ảnh'));
+            img.src = mediaUrl(id);
+        });
+        const { canvas, ctx } = coverCanvas();
+        drawCover(ctx, img, img.naturalWidth || 512, img.naturalHeight || 512);
+        return { bytes: await canvasToBytes(canvas) };
+    }
+
+    async function thumbFromVideo(id) {
+        const video = document.createElement('video');
+        video.muted = true;
+        video.preload = 'auto';
+        video.crossOrigin = 'anonymous';
+        video.playsInline = true;
+
+        const waitFor = (event, ms) => new Promise((resolve, reject) => {
+            const timer = setTimeout(() => { cleanup(); reject(new Error('Video mở quá lâu')); }, ms);
+            const ok = () => { cleanup(); resolve(); };
+            const bad = () => { cleanup(); reject(new Error('Không giải mã được video')); };
+            function cleanup() {
+                clearTimeout(timer);
+                video.removeEventListener(event, ok);
+                video.removeEventListener('error', bad);
+            }
+            video.addEventListener(event, ok, { once: true });
+            video.addEventListener('error', bad, { once: true });
+        });
+
+        try {
+            const loaded = waitFor('loadeddata', 12000);
+            video.src = mediaUrl(id);
+            await loaded;
+            if (!video.videoWidth) throw new Error('Tệp không có hình ảnh');
+
+            const duration = Number.isFinite(video.duration) ? video.duration : 0;
+            const target = duration > 0 ? Math.min(duration * 0.1, 10) : 0;
+            if (target > 0.05) {
+                const seeked = waitFor('seeked', 12000);
+                video.currentTime = target;
+                await seeked;
+            }
+            const { canvas, ctx } = coverCanvas();
+            drawCover(ctx, video, video.videoWidth, video.videoHeight);
+            return { bytes: await canvasToBytes(canvas), duration };
+        } finally {
+            video.pause();
+            video.removeAttribute('src');
+            video.load();
+        }
+    }
+
+    // --- THẺ TỆP ---
+    function detailText(file) {
+        if (file.kind === 'pdf') return file.pageCount > 0 ? `${file.pageCount} trang` : '';
+        const ext = extOf(file.name);
+        return ext ? `.${ext}` : kindInfo(file).label;
+    }
+
     function hoverActions(file) {
         const btn = 'grid h-7 w-7 place-items-center rounded-md bg-panel/95 text-ink shadow-sheet hover:text-accent transition-colors';
         return `
@@ -429,16 +647,17 @@
 
     function gridItemHTML(file) {
         const name = escapeHtml(file.name);
-        const cat = escapeHtml(file.category);
-        const sheetInner = `<span class="thumb absolute inset-0" data-thumb-id="${file.id}">${thumbMarkup(file.id)}</span>`;
+        const stack = file.kind === 'pdf' ? (file.pageCount >= 5 ? 'stack-2' : file.pageCount >= 2 ? 'stack-1' : '') : '';
+        const sheetInner = `<span class="thumb absolute inset-0 block" data-thumb-id="${file.id}">${thumbMarkup(file)}</span>`;
         const sheet = file.isTrash
             ? `<div class="sheet block w-full aspect-[3/4] overflow-hidden">${sheetInner}</div>`
             : `<button data-action="open" data-id="${file.id}" aria-label="Mở ${name}" class="sheet block w-full aspect-[3/4] overflow-hidden">${sheetInner}</button>`;
+        const detail = detailText(file);
 
         return `
             <article class="doc group min-w-0">
                 <div class="pr-2 pb-2">
-                    <div class="sheet-wrap ${stackClass(file)} ${file.isTrash ? 'opacity-60' : ''}">
+                    <div class="sheet-wrap ${stack} ${file.isTrash ? 'opacity-60' : ''}">
                         ${sheet}
                         ${file.isTrash ? '' : hoverActions(file)}
                     </div>
@@ -448,12 +667,12 @@
                     <div class="mt-1 flex items-center justify-between gap-2 text-xs text-muted">
                         <span class="flex min-w-0 items-center gap-1.5">
                             <span class="h-2 w-2 shrink-0 rounded-[2px]" style="background:${catColor(file.category)}"></span>
-                            <span class="truncate">${cat}</span>
+                            <span class="truncate">${escapeHtml(file.category)}</span>
                         </span>
                         <span class="shrink-0" title="${formatDate(file.uploadDate)}">${formatRelative(file.uploadDate)}</span>
                     </div>
                     <div class="mt-0.5 flex gap-3 text-xs text-muted">
-                        ${file.pageCount > 0 ? `<span>${file.pageCount} trang</span>` : ''}
+                        ${detail ? `<span>${escapeHtml(detail)}</span>` : ''}
                         <span>${formatFileSize(file.size)}</span>
                     </div>
                     ${file.isTrash ? trashButtons(file) : ''}
@@ -463,18 +682,18 @@
 
     function listRowHTML(file) {
         const name = escapeHtml(file.name);
-        const thumbInner = `<span class="thumb absolute inset-0" data-thumb-id="${file.id}">${thumbMarkup(file.id)}</span>`;
+        const thumbInner = `<span class="thumb absolute inset-0 block" data-thumb-id="${file.id}" data-mini="1">${thumbMarkup(file, true)}</span>`;
         const mini = file.isTrash
             ? `<div class="sheet block h-[53px] w-10 overflow-hidden opacity-60">${thumbInner}</div>`
             : `<button data-action="open" data-id="${file.id}" aria-label="Mở ${name}" class="sheet block h-[53px] w-10 overflow-hidden">${thumbInner}</button>`;
 
-        const iconBtn = 'tool-btn';
         const actions = file.isTrash
             ? `<button data-action="restore" data-id="${file.id}" class="btn-quiet !h-7 !px-2.5 text-xs">Khôi phục</button>
                <button data-action="delete" data-id="${file.id}" class="tool-btn text-red-600 dark:text-red-400" title="Xóa vĩnh viễn" aria-label="Xóa vĩnh viễn"><i class="fa-solid fa-xmark text-xs"></i></button>`
-            : `<button data-action="reveal" data-id="${file.id}" class="${iconBtn}" title="Hiện trong thư mục" aria-label="Hiện trong thư mục"><i class="fa-solid fa-folder-open text-xs"></i></button>
-               <button data-action="export" data-id="${file.id}" class="${iconBtn}" title="Lưu bản sao" aria-label="Lưu bản sao"><i class="fa-solid fa-download text-xs"></i></button>
-               <button data-action="trash" data-id="${file.id}" class="${iconBtn}" title="Bỏ vào thùng rác" aria-label="Bỏ vào thùng rác"><i class="fa-solid fa-trash-can text-xs"></i></button>`;
+            : `<button data-action="reveal" data-id="${file.id}" class="tool-btn" title="Hiện trong thư mục" aria-label="Hiện trong thư mục"><i class="fa-solid fa-folder-open text-xs"></i></button>
+               <button data-action="export" data-id="${file.id}" class="tool-btn" title="Lưu bản sao" aria-label="Lưu bản sao"><i class="fa-solid fa-download text-xs"></i></button>
+               <button data-action="trash" data-id="${file.id}" class="tool-btn" title="Bỏ vào thùng rác" aria-label="Bỏ vào thùng rác"><i class="fa-solid fa-trash-can text-xs"></i></button>`;
+        const detail = detailText(file);
 
         return `
             <div class="doc group grid grid-cols-[40px_minmax(0,1fr)_88px_120px_112px] items-center gap-4 border-t border-line px-2 py-2.5 transition-colors hover:bg-sunken/50">
@@ -486,7 +705,7 @@
                             <span class="h-2 w-2 shrink-0 rounded-[2px]" style="background:${catColor(file.category)}"></span>
                             <span class="truncate">${escapeHtml(file.category)}</span>
                         </span>
-                        ${file.pageCount > 0 ? `<span class="shrink-0">${file.pageCount} trang</span>` : ''}
+                        ${detail ? `<span class="shrink-0">${escapeHtml(detail)}</span>` : ''}
                     </div>
                 </div>
                 <span class="text-[13px] text-muted tabular-nums">${formatFileSize(file.size)}</span>
@@ -495,19 +714,19 @@
             </div>`;
     }
 
-    // --- THAO TÁC TRÊN TÀI LIỆU (ủy quyền sự kiện) ---
+    // --- THAO TÁC TRÊN TỆP (ủy quyền sự kiện) ---
     async function handleAction(btn) {
         const action = btn.dataset.action;
         if (action === 'add') { openUploadModal(); return; }
 
         const id = btn.dataset.id;
-        const file = state.files.find((f) => f.id === id);
+        const file = state.byId.get(id);
         if (!file) return;
 
         try {
             switch (action) {
                 case 'open':
-                    await openPDFReader(id);
+                    await openViewer(id);
                     break;
                 case 'reveal':
                     await api.revealFile(id);
@@ -528,7 +747,7 @@
                     showToast(`Đã khôi phục "${file.name}"`);
                     break;
                 case 'delete':
-                    if (await confirmDialog(`Xóa vĩnh viễn "${file.name}"? File sẽ bị xóa khỏi ổ đĩa và không thể khôi phục.`, 'Xóa vĩnh viễn')) {
+                    if (await confirmDialog(`Xóa vĩnh viễn "${file.name}"? Tệp sẽ bị xóa khỏi ổ đĩa và không thể khôi phục.`, 'Xóa vĩnh viễn')) {
                         applySnapshot(await api.deleteFile(id));
                         renderApp();
                         showToast(`Đã xóa vĩnh viễn "${file.name}"`, 'info');
@@ -548,7 +767,7 @@
     $('btnEmptyTrash').addEventListener('click', async () => {
         const count = state.files.filter((f) => f.isTrash).length;
         if (!count) return;
-        if (await confirmDialog(`Xóa vĩnh viễn ${count} file trong thùng rác? Thao tác này không thể hoàn tác.`, 'Dọn sạch')) {
+        if (await confirmDialog(`Xóa vĩnh viễn ${count} tệp trong thùng rác? Thao tác này không thể hoàn tác.`, 'Dọn sạch')) {
             try {
                 applySnapshot(await api.emptyTrash());
                 renderApp();
@@ -559,7 +778,7 @@
         }
     });
 
-    // --- ĐIỀU HƯỚNG, TÌM KIẾM, SẮP XẾP, KIỂU XEM ---
+    // --- ĐIỀU HƯỚNG, TÌM KIẾM, LỌC, SẮP XẾP, KIỂU XEM ---
     document.querySelector('nav[aria-label="Thư viện"]').addEventListener('click', (e) => {
         const btn = e.target.closest('[data-nav]');
         if (!btn) return;
@@ -584,6 +803,12 @@
         renderApp();
     });
 
+    $('typeSelect').addEventListener('change', (e) => {
+        state.typeFilter = e.target.value;
+        renderApp();
+        contentScroll.scrollTop = 0;
+    });
+
     $('sortSelect').addEventListener('change', (e) => {
         state.sortBy = e.target.value;
         store.set('sortBy', state.sortBy);
@@ -593,54 +818,131 @@
     $('btnGridView').addEventListener('click', () => { state.viewMode = 'grid'; store.set('viewMode', 'grid'); renderApp(); });
     $('btnListView').addEventListener('click', () => { state.viewMode = 'list'; store.set('viewMode', 'list'); renderApp(); });
 
-    // --- TRÌNH ĐỌC PDF ---
-    const pdfReaderModal = $('pdfReaderModal');
+    // --- TRÌNH XEM TỆP ---
+    const viewerModal = $('viewerModal');
+    const viewerViewport = $('viewerViewport');
+    const viewerLoading = $('viewerLoading');
     const readerCanvas = $('readerCanvas');
-    const readerLoading = $('readerLoading');
-    const readerViewport = $('readerViewport');
     const readerCurrentPageInput = $('readerCurrentPageInput');
     const readerTotalPages = $('readerTotalPages');
     const readerZoomLevel = $('readerZoomLevel');
+    const panels = {
+        pdf: $('viewerPdf'),
+        image: $('viewerImage'),
+        media: $('viewerMedia'),
+        text: $('viewerText'),
+        fallback: $('viewerFallback')
+    };
+    const FLEX_PANELS = new Set(['image', 'media', 'fallback']);
 
-    let readerOpenSeq = 0;
+    let viewerSeq = 0;
     let renderSeq = 0;
     let activeRender = null;
 
-    const isReaderOpen = () => !pdfReaderModal.classList.contains('hidden');
+    const isViewerOpen = () => !viewerModal.classList.contains('hidden');
     const clampZoom = (z) => Math.min(3, Math.max(0.5, Math.round(z * 10) / 10));
+    const hideLoading = () => viewerLoading.classList.add('hidden');
 
-    async function openPDFReader(id) {
-        const file = state.files.find((f) => f.id === id);
+    function showPanel(name) {
+        for (const [key, el] of Object.entries(panels)) {
+            const on = key === name;
+            el.classList.toggle('hidden', !on);
+            if (FLEX_PANELS.has(key)) el.classList.toggle('flex', on);
+        }
+    }
+
+    function toggleControls(kind) {
+        for (const [id, on] of [['pdfControls', kind === 'pdf'], ['imageControls', kind === 'image']]) {
+            const el = $(id);
+            el.classList.toggle('hidden', !on);
+            el.classList.toggle('flex', on);
+        }
+    }
+
+    function resetViewer() {
+        viewerSeq++;
+        renderSeq++;
+        if (activeRender) { try { activeRender.cancel(); } catch (_) { /* bỏ qua */ } }
+        activeRender = null;
+
+        const host = $('viewerMediaHost');
+        host.querySelectorAll('video,audio').forEach((m) => {
+            m.pause();
+            m.removeAttribute('src');
+            m.load();
+        });
+        host.innerHTML = '';
+
+        const img = $('viewerImg');
+        img.onload = img.onerror = null;
+        img.removeAttribute('src');
+
+        $('viewerTextBody').textContent = '';
+        $('viewerTextNote').classList.add('hidden');
+
+        if (state.readerPdfDoc) state.readerPdfDoc.destroy();
+        state.readerPdfDoc = null;
+        state.viewerFile = null;
+    }
+
+    function showFallback(file, message) {
+        const info = kindInfo(file);
+        showPanel('fallback');
+        $('fallbackIcon').innerHTML = `<i class="fa-solid ${info.icon}" style="color:${info.color}"></i>`;
+        $('fallbackTitle').textContent = file.name;
+        $('fallbackText').textContent = message;
+        hideLoading();
+    }
+
+    async function openViewer(id) {
+        const file = state.byId.get(id);
         if (!file) return;
 
-        const seq = ++readerOpenSeq;
-        state.readerCurrentFile = file;
-        state.readerCurrentPage = 1;
-        state.readerZoomScale = 1.2;
-
-        $('readerFileName').textContent = file.name;
-        pdfReaderModal.classList.remove('hidden');
-        readerLoading.classList.remove('hidden');
+        resetViewer();
+        const seq = ++viewerSeq;
+        state.viewerFile = file;
+        $('viewerFileName').textContent = file.name;
+        viewerViewport.scrollTop = 0;
+        viewerModal.classList.remove('hidden');
+        toggleControls(file.kind);
+        viewerLoading.classList.remove('hidden');
 
         try {
-            const bytes = await api.readFile(id);
-            const doc = await pdfjsLib.getDocument({ data: new Uint8Array(bytes) }).promise;
-            if (seq !== readerOpenSeq) { // người dùng đã đóng hoặc mở file khác
-                doc.destroy();
-                return;
+            switch (file.kind) {
+                case 'pdf': await openPdf(file, seq); break;
+                case 'image': await openImage(file, seq); break;
+                case 'video':
+                case 'audio': openMedia(file, seq); break;
+                case 'text': await openText(file, seq); break;
+                default:
+                    showFallback(file, 'Documents Hub chưa xem trực tiếp được loại tệp này. Bạn có thể mở bằng ứng dụng mặc định trên máy.');
             }
-            state.readerPdfDoc = doc;
-            readerTotalPages.textContent = doc.numPages;
-            readerCurrentPageInput.max = doc.numPages;
-            await fitToWidth(true);
         } catch (err) {
-            if (seq !== readerOpenSeq) return;
-            console.error('Lỗi mở PDF reader:', err);
-            showToast('Không thể hiển thị nội dung PDF này', 'error');
-            closeReader();
+            if (seq !== viewerSeq) return;
+            console.error('Lỗi mở tệp:', err);
+            showFallback(file, (err && err.message) || 'Không mở được tệp này.');
         } finally {
-            if (seq === readerOpenSeq) readerLoading.classList.add('hidden');
+            // video/âm thanh tự tắt màn hình chờ khi đã tải xong siêu dữ liệu
+            if (seq === viewerSeq && file.kind !== 'video' && file.kind !== 'audio') hideLoading();
         }
+    }
+
+    function closeViewer() {
+        resetViewer();
+        viewerModal.classList.add('hidden');
+    }
+
+    // PDF
+    async function openPdf(file, seq) {
+        const bytes = await api.readFile(file.id);
+        const doc = await pdfjsLib.getDocument({ data: new Uint8Array(bytes) }).promise;
+        if (seq !== viewerSeq) { doc.destroy(); return; } // đã đóng hoặc mở tệp khác
+        state.readerPdfDoc = doc;
+        state.readerCurrentPage = 1;
+        readerTotalPages.textContent = doc.numPages;
+        readerCurrentPageInput.max = doc.numPages;
+        showPanel('pdf');
+        await fitToWidth(true);
     }
 
     async function renderReaderPage(pageNum) {
@@ -654,7 +956,7 @@
         }
         if (seq !== renderSeq || state.readerPdfDoc !== doc) return;
 
-        readerLoading.classList.remove('hidden');
+        viewerLoading.classList.remove('hidden');
         try {
             const page = await doc.getPage(pageNum);
             const viewport = page.getViewport({ scale: state.readerZoomScale });
@@ -675,13 +977,13 @@
 
             readerCurrentPageInput.value = pageNum;
             readerZoomLevel.textContent = `${Math.round(state.readerZoomScale * 100)}%`;
-            readerViewport.scrollTop = 0;
+            viewerViewport.scrollTop = 0;
         } catch (err) {
             if (!err || err.name !== 'RenderingCancelledException') console.error('Lỗi render trang PDF:', err);
         } finally {
             if (seq === renderSeq) {
                 activeRender = null;
-                readerLoading.classList.add('hidden');
+                hideLoading();
             }
         }
     }
@@ -698,20 +1000,9 @@
         if (!doc) return;
         const page = await doc.getPage(state.readerCurrentPage);
         const base = page.getViewport({ scale: 1 });
-        const fit = clampZoom((readerViewport.clientWidth - 96) / base.width);
+        const fit = clampZoom((viewerViewport.clientWidth - 96) / base.width);
         state.readerZoomScale = first ? Math.min(fit, 1.6) : fit;
         await renderReaderPage(state.readerCurrentPage);
-    }
-
-    function closeReader() {
-        readerOpenSeq++;
-        renderSeq++;
-        if (activeRender) { try { activeRender.cancel(); } catch (_) { /* bỏ qua */ } }
-        activeRender = null;
-        pdfReaderModal.classList.add('hidden');
-        if (state.readerPdfDoc) state.readerPdfDoc.destroy();
-        state.readerPdfDoc = null;
-        state.readerCurrentFile = null;
     }
 
     $('btnReaderPrevPage').addEventListener('click', () => goToPage(state.readerCurrentPage - 1));
@@ -729,20 +1020,103 @@
         renderReaderPage(state.readerCurrentPage);
     });
     $('btnReaderResetZoom').addEventListener('click', () => fitToWidth(false));
-    $('btnCloseReaderModal').addEventListener('click', closeReader);
 
-    $('btnReaderDownload').addEventListener('click', async () => {
-        if (!state.readerCurrentFile) return;
-        try {
-            const res = await api.exportFile(state.readerCurrentFile.id);
-            if (res.saved) showToast(`Đã lưu bản sao: ${res.path}`);
-        } catch (err) { showError(err); }
-    });
+    // Hình ảnh
+    function applyImageFit() {
+        const img = $('viewerImg');
+        img.style.maxWidth = state.imageFit ? '100%' : 'none';
+        img.style.maxHeight = state.imageFit ? 'calc(100vh - 116px)' : 'none';
+        img.style.cursor = state.imageFit ? 'zoom-in' : 'zoom-out';
+        $('btnImageFit').textContent = state.imageFit ? 'Kích thước thật' : 'Vừa khung';
+    }
 
-    $('btnReaderOpenExternal').addEventListener('click', async () => {
-        if (!state.readerCurrentFile) return;
-        try { await api.openExternal(state.readerCurrentFile.id); } catch (err) { showError(err); }
-    });
+    async function openImage(file, seq) {
+        const img = $('viewerImg');
+        state.imageFit = true;
+        applyImageFit();
+        showPanel('image');
+        await new Promise((resolve, reject) => {
+            img.onload = resolve;
+            img.onerror = () => reject(new Error('Không hiển thị được hình ảnh này.'));
+            img.src = mediaUrl(file.id);
+        });
+        if (seq !== viewerSeq) return;
+    }
+
+    $('btnImageFit').addEventListener('click', () => { state.imageFit = !state.imageFit; applyImageFit(); });
+    $('viewerImg').addEventListener('click', () => { state.imageFit = !state.imageFit; applyImageFit(); });
+
+    // Video và âm thanh
+    function openMedia(file, seq) {
+        const isVideo = file.kind === 'video';
+        const host = $('viewerMediaHost');
+        showPanel('media');
+
+        const el = document.createElement(isVideo ? 'video' : 'audio');
+        el.controls = true;
+        el.autoplay = true;
+        el.preload = 'auto';
+        if (isVideo) {
+            el.playsInline = true;
+            el.className = 'max-w-full rounded-sheet bg-black shadow-pop';
+            el.style.maxHeight = 'calc(100vh - 116px)';
+            host.appendChild(el);
+        } else {
+            const card = document.createElement('div');
+            card.className = 'w-full max-w-xl rounded-xl bg-panel p-6 text-center shadow-sheet';
+            card.innerHTML = `
+                <span class="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-sunken text-xl" style="color:${KIND_INFO.audio.color}"><i class="fa-solid fa-music"></i></span>
+                <p class="mb-4 break-words text-[14px] font-medium">${escapeHtml(file.name)}</p>`;
+            el.className = 'w-full';
+            card.appendChild(el);
+            host.appendChild(card);
+        }
+
+        el.addEventListener('loadedmetadata', () => {
+            if (seq !== viewerSeq) return;
+            hideLoading();
+            if (isVideo && Number.isFinite(el.duration)) rememberDuration(file, el.duration);
+        });
+        el.addEventListener('error', () => {
+            if (seq !== viewerSeq) return;
+            host.innerHTML = '';
+            showFallback(file, isVideo
+                ? 'Định dạng hoặc bộ mã hóa của video này chưa phát được trong Documents Hub. MP4 (H.264), WebM và MOV thường phát tốt; AVI, WMV hoặc HEVC thì nên mở bằng trình phát mặc định.'
+                : 'Định dạng âm thanh này chưa phát được trong Documents Hub. Bạn có thể mở bằng trình phát mặc định trên máy.');
+        });
+        el.src = mediaUrl(file.id);
+    }
+
+    // Văn bản
+    async function openText(file, seq) {
+        const limit = 1048576;
+        const r = await api.readText(file.id, limit);
+        if (seq !== viewerSeq) return;
+        showPanel('text');
+        $('viewerTextBody').textContent = r.text.length ? r.text : '(Tệp trống)';
+        const note = $('viewerTextNote');
+        if (r.truncated) {
+            note.textContent = `Chỉ hiển thị ${formatFileSize(limit)} đầu tiên trong tổng ${formatFileSize(r.size)}. Dùng "Mở bằng ứng dụng mặc định" để xem đầy đủ.`;
+            note.classList.remove('hidden');
+        }
+    }
+
+    // Các nút chung của trình xem
+    $('btnCloseViewer').addEventListener('click', closeViewer);
+
+    const withViewerFile = (fn) => async () => {
+        const file = state.viewerFile;
+        if (!file) return;
+        try { await fn(file); } catch (err) { showError(err); }
+    };
+    $('btnViewerSave').addEventListener('click', withViewerFile(async (file) => {
+        const res = await api.exportFile(file.id);
+        if (res.saved) showToast(`Đã lưu bản sao: ${res.path}`);
+    }));
+    $('btnViewerOpenExternal').addEventListener('click', withViewerFile((file) => api.openExternal(file.id)));
+    $('btnFallbackOpen').addEventListener('click', withViewerFile((file) => api.openExternal(file.id)));
+    $('btnViewerReveal').addEventListener('click', withViewerFile((file) => api.revealFile(file.id)));
+    $('btnFallbackReveal').addEventListener('click', withViewerFile((file) => api.revealFile(file.id)));
 
     // --- PHÂN LOẠI ---
     const openModal = (modal) => modal.classList.remove('hidden');
@@ -824,7 +1198,7 @@
                 }
                 const target = state.categories.find((c) => c !== name);
                 const ok = await confirmDialog(
-                    `Xóa phân loại "${name}"? File trong phân loại này sẽ được chuyển sang "${target}".`, 'Xóa phân loại');
+                    `Xóa phân loại "${name}"? Tệp trong phân loại này sẽ được chuyển sang "${target}".`, 'Xóa phân loại');
                 if (!ok) return;
                 try {
                     applySnapshot(await api.deleteCategory(name));
@@ -896,8 +1270,7 @@
     });
     $('btnWelcomeChoose').addEventListener('click', chooseFolder);
 
-    // --- THÊM PDF ---
-    const fileInput = $('fileInput');
+    // --- THÊM TỆP ---
     const dropZone = $('dropZone');
 
     function defaultUploadCategory() {
@@ -919,21 +1292,58 @@
     document.querySelectorAll('.btnCloseModal').forEach((btn) =>
         btn.addEventListener('click', () => closeModal(uploadModal)));
 
-    dropZone.addEventListener('click', () => fileInput.click());
+    function reportImport(res) {
+        const failed = res.failed || [];
+        if (failed.length === 0) {
+            showToast(res.added === 1 ? 'Đã thêm 1 tệp' : `Đã thêm ${res.added} tệp`);
+            return;
+        }
+        const first = failed[0];
+        const more = failed.length > 1 ? ` và ${failed.length - 1} tệp khác` : '';
+        const head = res.added > 0 ? `Đã thêm ${res.added} tệp. ` : '';
+        showToast(`${head}Không thêm được "${first.name}"${more}: ${first.error}`, res.added > 0 ? 'info' : 'error');
+    }
+
+    async function importPaths(paths, category) {
+        if (!paths.length) {
+            showToast('Không đọc được đường dẫn của tệp đã thả vào', 'error');
+            return;
+        }
+        setBusy(paths.length === 1 ? 'Đang thêm tệp' : `Đang thêm ${paths.length} tệp`);
+        try {
+            const res = await api.importPaths(paths, category);
+            applySnapshot(res.snapshot);
+            closeModal(uploadModal);
+            if (res.added > 0) state.nav = 'all';
+            renderApp();
+            reportImport(res);
+            backfillPageCounts();
+        } catch (err) {
+            showError(err);
+        } finally {
+            setBusy(null);
+        }
+    }
+
+    async function pickFiles() {
+        try {
+            const paths = await api.chooseFiles();
+            if (paths.length) await importPaths(paths, uploadCategorySelect.value);
+        } catch (err) { showError(err); }
+    }
+
+    dropZone.addEventListener('click', pickFiles);
     dropZone.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); }
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickFiles(); }
     });
     dropZone.addEventListener('drop', (e) => {
         e.preventDefault();
         e.stopPropagation();
         hideDropOverlay();
-        if (e.dataTransfer.files.length) handleFileUpload(e.dataTransfer.files, uploadCategorySelect.value);
-    });
-    fileInput.addEventListener('change', (e) => {
-        if (e.target.files.length) handleFileUpload(e.target.files, uploadCategorySelect.value);
+        importPaths(api.pathsForFiles(e.dataTransfer.files), uploadCategorySelect.value);
     });
 
-    // Thả file PDF vào bất kỳ đâu trong cửa sổ
+    // Thả tệp vào bất kỳ đâu trong cửa sổ
     const dropOverlay = $('dropOverlay');
     let dragDepth = 0;
     const hasFiles = (e) => e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files');
@@ -948,7 +1358,7 @@
         if (!hasFiles(e)) return;
         e.preventDefault();
         dragDepth++;
-        if (!state.libraryReady || isReaderOpen()) return;
+        if (!state.libraryReady || isViewerOpen()) return;
         $('dropTarget').textContent = defaultUploadCategory() || 'thư viện';
         dropOverlay.classList.remove('hidden');
         dropOverlay.classList.add('flex');
@@ -962,47 +1372,9 @@
     window.addEventListener('drop', (e) => {
         e.preventDefault();
         hideDropOverlay();
-        if (!state.libraryReady || !e.dataTransfer || !e.dataTransfer.files.length) return;
-        handleFileUpload(e.dataTransfer.files, defaultUploadCategory());
+        if (!state.libraryReady || isViewerOpen() || !e.dataTransfer || !e.dataTransfer.files.length) return;
+        importPaths(api.pathsForFiles(e.dataTransfer.files), defaultUploadCategory());
     });
-
-    async function handleFileUpload(files, category) {
-        let ok = 0;
-
-        for (const file of Array.from(files)) {
-            if (file.type !== 'application/pdf' && !/\.pdf$/i.test(file.name)) {
-                showToast(`"${file.name}" không phải file PDF`, 'error');
-                continue;
-            }
-
-            try {
-                const buffer = await file.arrayBuffer();
-
-                let pageCount = 0;
-                try {
-                    const doc = await pdfjsLib.getDocument({ data: new Uint8Array(buffer.slice(0)) }).promise;
-                    pageCount = doc.numPages;
-                    doc.destroy();
-                } catch (pErr) {
-                    console.warn('Không thể đọc số trang:', pErr);
-                }
-
-                applySnapshot(await api.saveFile({ name: file.name, data: new Uint8Array(buffer), category, pageCount }));
-                ok++;
-            } catch (err) {
-                console.error('Lỗi khi lưu file:', err);
-                showToast(`Không thể lưu "${file.name}": ${err.message}`, 'error');
-            }
-        }
-
-        closeModal(uploadModal);
-        fileInput.value = '';
-        if (ok > 0) {
-            state.nav = 'all';
-            renderApp();
-            showToast(ok === 1 ? 'Đã thêm 1 file PDF' : `Đã thêm ${ok} file PDF`);
-        }
-    }
 
     // --- PHÍM TẮT ---
     document.addEventListener('keydown', (e) => {
@@ -1014,7 +1386,7 @@
         }
 
         if (e.key === 'Escape') {
-            if (isReaderOpen()) closeReader();
+            if (isViewerOpen()) closeViewer();
             else if ([uploadModal, categoryModal, folderModal].some((m) => !m.classList.contains('hidden'))) {
                 [uploadModal, categoryModal, folderModal].forEach(closeModal);
             } else if (document.activeElement === searchInput) {
@@ -1027,8 +1399,8 @@
             return;
         }
 
-        if (isReaderOpen()) {
-            if (e.target.tagName === 'INPUT') return;
+        if (isViewerOpen()) {
+            if (!state.viewerFile || state.viewerFile.kind !== 'pdf' || e.target.tagName === 'INPUT') return;
             if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'PageUp') goToPage(state.readerCurrentPage - 1);
             else if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === 'PageDown') goToPage(state.readerCurrentPage + 1);
             return;
@@ -1045,13 +1417,13 @@
         }
     });
 
-    // --- TÍNH SỐ TRANG CHO FILE MỚI NHẬN DIỆN TỪ THƯ MỤC ---
+    // --- TÍNH SỐ TRANG CHO PDF MỚI NHẬN DIỆN ---
     let backfilling = false;
     async function backfillPageCounts() {
         if (backfilling) return;
         backfilling = true;
         try {
-            const pending = state.files.filter((f) => !f.isTrash && !f.pageCount);
+            const pending = state.files.filter((f) => !f.isTrash && f.kind === 'pdf' && !f.pageCount);
             for (const f of pending) {
                 let n = -1; // -1: không đọc được, không thử lại
                 try {
@@ -1059,7 +1431,7 @@
                     const doc = await pdfjsLib.getDocument({ data: new Uint8Array(bytes) }).promise;
                     n = doc.numPages;
                     doc.destroy();
-                } catch (_) { /* file lỗi */ }
+                } catch (_) { /* tệp lỗi */ }
                 try {
                     applySnapshot(await api.updateMeta(f.id, { pageCount: n }));
                     renderApp();
@@ -1072,7 +1444,7 @@
 
     // --- KHỞI ĐỘNG ---
     window.addEventListener('DOMContentLoaded', async () => {
-        initTheme();
+        syncThemeIcon();
         updateViewControls();
         try {
             const snap = await api.loadLibrary();

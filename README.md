@@ -1,34 +1,44 @@
-# PDF Hub (bản chạy trên PC)
+# Documents Hub
 
-Ứng dụng quản lý và đọc file PDF. File được lưu **trực tiếp thành file PDF thật** trong thư mục bạn chọn trên ổ đĩa.
+Ứng dụng Windows quản lý và xem tài liệu. Nhận **mọi định dạng tệp**; tệp được lưu thành tệp thật trong thư mục bạn chọn.
+
+## Xem trực tiếp trong app
+| Loại | Định dạng |
+|---|---|
+| PDF | pdf |
+| Hình ảnh | png, jpg, gif, webp, bmp, svg, avif… |
+| Video | mp4 (H.264), webm, mov, m4v, ogv… (có tua) |
+| Âm thanh | mp3, wav, ogg, m4a, flac, aac, opus |
+| Văn bản / mã nguồn | txt, md, json, csv, log, ino, c, py, js… |
+| Khác (docx, xlsx, zip, mkv, avi…) | lưu trữ, xem ảnh biểu tượng; mở bằng ứng dụng mặc định của máy |
+
+Vì lý do an toàn, app không chạy trực tiếp tệp thực thi/script (exe, bat, msi, ps1…); các tệp này vẫn lưu và quản lý được.
 
 ## Cách lưu trữ
 ```
 <Thư mục bạn chọn>/
-├── Công việc/        <- mỗi phân loại là một thư mục con
-│   └── bao-cao.pdf
+├── Công việc/             <- mỗi phân loại là một thư mục con
 ├── Học tập/
-├── .thung-rac/       <- file trong thùng rác
-└── .pdfhub/library.json   <- ghi chú, số trang, danh sách phân loại
+├── .thung-rac/            <- thùng rác
+└── .dochub/library.json   <- ghi chú, số trang, thời lượng, ảnh xem trước
 ```
-- Lần đầu mở app sẽ yêu cầu chọn thư mục lưu trữ; có thể đổi trong nút **Thư mục lưu trữ** trên thanh đầu.
-- File PDF bạn tự chép vào các thư mục phân loại sẽ được app nhận diện ở lần mở sau.
-- Đổi tên/xóa phân loại sẽ đổi tên/di chuyển thư mục tương ứng trên đĩa.
+- Thư viện PDF Hub cũ (`.pdfhub`) được tự động nhận lại.
+- Tệp bạn tự chép vào thư mục phân loại sẽ được nhận diện ở lần mở sau.
+- Thêm tệp bằng nút **Thêm tệp** hoặc kéo thả vào cửa sổ; tệp được chép thẳng từ ổ đĩa, không nạp cả vào bộ nhớ nên video lớn vẫn ổn.
 
-## Chạy thử (cần Node.js 18+)
+## Chạy thử (Node.js 18+)
 ```bash
 npm install
 npm start
 ```
 
-## Đóng gói file cài đặt .exe (Windows)
+## Đóng gói .exe
 ```bash
 npm run dist
 ```
-Kết quả nằm trong thư mục `dist/` (bản cài đặt NSIS và bản portable).
-Nếu không có máy Windows: đẩy dự án lên GitHub rồi chạy workflow **Build Windows app** (Actions), tải file .exe ở mục Artifacts.
+Hoặc đẩy lên GitHub và chạy workflow **Build Windows app**, tải ở mục Artifacts (`Documents-Hub-windows`).
 
-## Kiểm thử logic lưu trữ
+## Kiểm thử
 ```bash
 npm test
 ```
