@@ -160,6 +160,7 @@
         </div>
 
         <div class="no-drag flex items-center gap-2 flex-1 justify-end">
+            <button id="btnViewerEdit" class="no-drag tool-btn" title="Đổi tên / chuyển phân loại" aria-label="Đổi tên hoặc chuyển phân loại"><i class="fa-solid fa-pen text-sm"></i></button>
             <button id="btnViewerReveal" class="tool-btn" title="Hiện trong thư mục" aria-label="Hiện trong thư mục">
                 <i class="fa-solid fa-folder-open text-[13px]"></i>
             </button>
@@ -274,11 +275,43 @@
                 <span class="block text-[13px] font-medium mb-1.5">Lưu vào phân loại</span>
                 <select id="uploadCategorySelect" class="field"></select>
             </label>
+
+            <label class="flex items-start gap-3 cursor-pointer rounded-lg bg-sunken/70 px-3 py-2.5">
+                <input id="removeSourceCheck" type="checkbox" class="mt-0.5 h-4 w-4 accent-[rgb(var(--accent))]">
+                <span class="text-[13px] leading-snug">
+                    <span class="block font-medium">Xóa tệp gốc sau khi thêm</span>
+                    <span class="block text-muted">Chỉ xóa khi bản sao đã lưu đủ dung lượng. Tệp gốc được chuyển vào Thùng rác của Windows.</span>
+                </span>
+            </label>
         </div>
         <div class="flex justify-end px-5 py-3 border-t border-line">
             <button type="button" class="btnCloseModal btn-quiet">Hủy</button>
         </div>
     </div>
+</div>
+
+<!-- ===================== Hộp thoại: Sửa tệp ===================== -->
+<div id="editModal" class="fixed inset-0 z-50 hidden flex items-center justify-center p-6 bg-ink/40">
+    <form id="editForm" class="w-full max-w-md bg-panel rounded-xl shadow-pop" role="dialog" aria-modal="true" aria-labelledby="editModalTitle">
+        <div class="flex items-center justify-between px-5 pt-4 pb-3">
+            <h2 id="editModalTitle" class="text-[16px] font-semibold">Đổi tên và phân loại</h2>
+            <button type="button" class="btnCloseEdit tool-btn" aria-label="Đóng"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div class="px-5 pb-5 space-y-4">
+            <label class="block">
+                <span class="block text-[13px] font-medium mb-1.5">Tên tệp</span>
+                <input id="editNameInput" class="field" autocomplete="off" spellcheck="false">
+            </label>
+            <label class="block">
+                <span class="block text-[13px] font-medium mb-1.5">Phân loại</span>
+                <select id="editCategorySelect" class="field"></select>
+            </label>
+        </div>
+        <div class="flex justify-end gap-2 px-5 py-3 border-t border-line">
+            <button type="button" class="btnCloseEdit btn-quiet">Hủy</button>
+            <button type="submit" class="btn-primary">Lưu</button>
+        </div>
+    </form>
 </div>
 
 <!-- ===================== Hộp thoại: Xác nhận ===================== -->

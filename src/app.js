@@ -14,6 +14,13 @@
         }
     };
 
+    // Áp dụng ngay giao diện đã nhớ để tránh nháy sáng/tối lúc mở app
+    {
+        const early = store.get('dark', null);
+        const dark = early === null ? window.matchMedia('(prefers-color-scheme: dark)').matches : early === '1';
+        document.documentElement.classList.toggle('dark', dark);
+    }
+
     // --- LOẠI TỆP ---
     const KIND_INFO = {
         pdf:     { label: 'PDF',      icon: 'fa-file-pdf',    color: '#C8452B' },
@@ -209,6 +216,11 @@
     }
 
     // --- GIAO DIỆN SÁNG/TỐI (preload đã đặt sẵn class "dark" từ cài đặt đã lưu) ---
+    function applyDark(dark) {
+        document.documentElement.classList.toggle('dark', !!dark);
+        syncThemeIcon();
+    }
+
     function syncThemeIcon() {
         const dark = document.documentElement.classList.contains('dark');
         $('themeIcon').className = dark ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
@@ -216,8 +228,8 @@
 
     $('btnThemeToggle').addEventListener('click', () => {
         const dark = !document.documentElement.classList.contains('dark');
-        document.documentElement.classList.toggle('dark', dark);
-        syncThemeIcon();
+        applyDark(dark);
+        store.set('dark', dark ? '1' : '0');
         api.setTheme(dark).catch(() => { /* chỉ ảnh hưởng thanh tiêu đề */ });
     });
 
@@ -631,6 +643,7 @@
         const btn = 'grid h-7 w-7 place-items-center rounded-md bg-panel/95 text-ink shadow-sheet hover:text-accent transition-colors';
         return `
             <div class="absolute right-2 top-2 z-10 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                <button data-action="edit" data-id="${file.id}" class="${btn}" title="Đổi tên / chuyển phân loại" aria-label="Đổi tên hoặc chuyển phân loại"><i class="fa-solid fa-pen text-xs"></i></button>
                 <button data-action="reveal" data-id="${file.id}" class="${btn}" title="Hiện trong thư mục" aria-label="Hiện trong thư mục"><i class="fa-solid fa-folder-open text-xs"></i></button>
                 <button data-action="export" data-id="${file.id}" class="${btn}" title="Lưu bản sao" aria-label="Lưu bản sao"><i class="fa-solid fa-download text-xs"></i></button>
                 <button data-action="trash" data-id="${file.id}" class="${btn}" title="Bỏ vào thùng rác" aria-label="Bỏ vào thùng rác"><i class="fa-solid fa-trash-can text-xs"></i></button>
@@ -690,7 +703,8 @@
         const actions = file.isTrash
             ? `<button data-action="restore" data-id="${file.id}" class="btn-quiet !h-7 !px-2.5 text-xs">Khôi phục</button>
                <button data-action="delete" data-id="${file.id}" class="tool-btn text-red-600 dark:text-red-400" title="Xóa vĩnh viễn" aria-label="Xóa vĩnh viễn"><i class="fa-solid fa-xmark text-xs"></i></button>`
-            : `<button data-action="reveal" data-id="${file.id}" class="tool-btn" title="Hiện trong thư mục" aria-label="Hiện trong thư mục"><i class="fa-solid fa-folder-open text-xs"></i></button>
+            : `<button data-action="edit" data-id="${file.id}" class="tool-btn" title="Đổi tên / chuyển phân loại" aria-label="Đổi tên hoặc chuyển phân loại"><i class="fa-solid fa-pen text-xs"></i></button>
+               <button data-action="reveal" data-id="${file.id}" class="tool-btn" title="Hiện trong thư mục" aria-label="Hiện trong thư mục"><i class="fa-solid fa-folder-open text-xs"></i></button>
                <button data-action="export" data-id="${file.id}" class="tool-btn" title="Lưu bản sao" aria-label="Lưu bản sao"><i class="fa-solid fa-download text-xs"></i></button>
                <button data-action="trash" data-id="${file.id}" class="tool-btn" title="Bỏ vào thùng rác" aria-label="Bỏ vào thùng rác"><i class="fa-solid fa-trash-can text-xs"></i></button>`;
         const detail = detailText(file);
@@ -727,6 +741,9 @@
             switch (action) {
                 case 'open':
                     await openViewer(id);
+                    break;
+                case 'edit':
+                    openEditModal(id);
                     break;
                 case 'reveal':
                     await api.revealFile(id);
@@ -904,6 +921,7 @@
         $('viewerFileName').textContent = file.name;
         viewerViewport.scrollTop = 0;
         viewerModal.classList.remove('hidden');
+        api.setChromeDark(true).catch(() => {});
         toggleControls(file.kind);
         viewerLoading.classList.remove('hidden');
 
@@ -930,6 +948,7 @@
     function closeViewer() {
         resetViewer();
         viewerModal.classList.add('hidden');
+        api.setChromeDark(false).catch(() => {});
     }
 
     // PDF
@@ -1118,6 +1137,60 @@
     $('btnViewerReveal').addEventListener('click', withViewerFile((file) => api.revealFile(file.id)));
     $('btnFallbackReveal').addEventListener('click', withViewerFile((file) => api.revealFile(file.id)));
 
+    // --- ĐỔI TÊN / CHUYỂN PHÂN LOẠI ---
+    const editModal = $('editModal');
+    const editNameInput = $('editNameInput');
+    const editCategorySelect = $('editCategorySelect');
+    let editingId = null;
+
+    function openEditModal(id) {
+        const file = state.byId.get(id);
+        if (!file || file.isTrash) return;
+        editingId = id;
+        editNameInput.value = file.name;
+        editCategorySelect.innerHTML = state.categories
+            .map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+        editCategorySelect.value = file.category;
+        editModal.classList.remove('hidden');
+        editNameInput.focus();
+        // chọn phần tên, không chọn đuôi tệp
+        const dot = file.name.lastIndexOf('.');
+        editNameInput.setSelectionRange(0, dot > 0 ? dot : file.name.length);
+    }
+
+    function closeEditModal() {
+        editModal.classList.add('hidden');
+        editingId = null;
+    }
+
+    document.querySelectorAll('.btnCloseEdit').forEach((b) => b.addEventListener('click', closeEditModal));
+    $('btnViewerEdit').addEventListener('click', () => { if (state.viewerFile) openEditModal(state.viewerFile.id); });
+
+    $('editForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const id = editingId;
+        const file = state.byId.get(id);
+        if (!file) return closeEditModal();
+        const newName = editNameInput.value.trim();
+        const newCat = editCategorySelect.value;
+        if (!newName) { showToast('Tên tệp không được để trống', 'error'); return; }
+        try {
+            let changed = false;
+            if (newName !== file.name) { applySnapshot(await api.renameFile(id, newName)); changed = true; }
+            if (newCat !== state.byId.get(id).category) { applySnapshot(await api.moveFile(id, newCat)); changed = true; }
+            closeEditModal();
+            if (changed) {
+                renderApp();
+                const updated = state.byId.get(id);
+                if (state.viewerFile && state.viewerFile.id === id) {
+                    state.viewerFile = updated;
+                    $('viewerFileName').textContent = updated.name;
+                }
+                showToast('Đã cập nhật tệp');
+            }
+        } catch (err) { showError(err); }
+    });
+
     // --- PHÂN LOẠI ---
     const openModal = (modal) => modal.classList.remove('hidden');
     const closeModal = (modal) => modal.classList.add('hidden');
@@ -1294,8 +1367,14 @@
 
     function reportImport(res) {
         const failed = res.failed || [];
+        const keep = res.notRemoved || [];
+        const base = res.added === 1 ? 'Đã thêm 1 tệp' : `Đã thêm ${res.added} tệp`;
+        if (failed.length === 0 && keep.length === 0) {
+            showToast(res.removed > 0 ? `${base} và xóa tệp gốc` : base);
+            return;
+        }
         if (failed.length === 0) {
-            showToast(res.added === 1 ? 'Đã thêm 1 tệp' : `Đã thêm ${res.added} tệp`);
+            showToast(`${base}, nhưng không xóa được tệp gốc "${keep[0].name}": ${keep[0].error}`, 'info');
             return;
         }
         const first = failed[0];
@@ -1304,14 +1383,19 @@
         showToast(`${head}Không thêm được "${first.name}"${more}: ${first.error}`, res.added > 0 ? 'info' : 'error');
     }
 
-    async function importPaths(paths, category) {
+    const removeSourceCheck = $('removeSourceCheck');
+    removeSourceCheck.checked = store.get('removeSource', '1') === '1';
+    removeSourceCheck.addEventListener('change', () => store.set('removeSource', removeSourceCheck.checked ? '1' : '0'));
+
+    // removeSource chỉ bật cho luồng "Thêm tệp"; kéo thả vào cửa sổ luôn chỉ sao chép
+    async function importPaths(paths, category, removeSource = false) {
         if (!paths.length) {
             showToast('Không đọc được đường dẫn của tệp đã thả vào', 'error');
             return;
         }
         setBusy(paths.length === 1 ? 'Đang thêm tệp' : `Đang thêm ${paths.length} tệp`);
         try {
-            const res = await api.importPaths(paths, category);
+            const res = await api.importPaths(paths, category, removeSource);
             applySnapshot(res.snapshot);
             closeModal(uploadModal);
             if (res.added > 0) state.nav = 'all';
@@ -1328,7 +1412,7 @@
     async function pickFiles() {
         try {
             const paths = await api.chooseFiles();
-            if (paths.length) await importPaths(paths, uploadCategorySelect.value);
+            if (paths.length) await importPaths(paths, uploadCategorySelect.value, removeSourceCheck.checked);
         } catch (err) { showError(err); }
     }
 
@@ -1340,7 +1424,7 @@
         e.preventDefault();
         e.stopPropagation();
         hideDropOverlay();
-        importPaths(api.pathsForFiles(e.dataTransfer.files), uploadCategorySelect.value);
+        importPaths(api.pathsForFiles(e.dataTransfer.files), uploadCategorySelect.value, removeSourceCheck.checked);
     });
 
     // Thả tệp vào bất kỳ đâu trong cửa sổ
@@ -1386,9 +1470,11 @@
         }
 
         if (e.key === 'Escape') {
-            if (isViewerOpen()) closeViewer();
-            else if ([uploadModal, categoryModal, folderModal].some((m) => !m.classList.contains('hidden'))) {
+            if (!editModal.classList.contains('hidden')) closeEditModal();
+            else if (isViewerOpen()) closeViewer();
+            else if ([uploadModal, categoryModal, folderModal, editModal].some((m) => !m.classList.contains('hidden'))) {
                 [uploadModal, categoryModal, folderModal].forEach(closeModal);
+                closeEditModal();
             } else if (document.activeElement === searchInput) {
                 searchInput.value = '';
                 state.searchQuery = '';
@@ -1444,7 +1530,11 @@
 
     // --- KHỞI ĐỘNG ---
     window.addEventListener('DOMContentLoaded', async () => {
-        syncThemeIcon();
+        // Đồng bộ giao diện với cài đặt đã lưu (hoặc theo hệ thống) để khớp với màu nút cửa sổ do main đặt
+        try {
+            const saved = await api.getTheme();
+            applyDark(saved === null ? window.matchMedia('(prefers-color-scheme: dark)').matches : saved);
+        } catch (_) { syncThemeIcon(); }
         updateViewControls();
         try {
             const snap = await api.loadLibrary();

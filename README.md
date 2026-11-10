@@ -22,6 +22,8 @@ Vì lý do an toàn, app không chạy trực tiếp tệp thực thi/script (ex
 ├── .thung-rac/            <- thùng rác
 └── .dochub/library.json   <- ghi chú, số trang, thời lượng, ảnh xem trước
 ```
+- Đổi tên và chuyển phân loại: nút bút chì trên mỗi tệp (hoặc trong trình xem).
+- Hộp thoại **Thêm tệp** có tùy chọn xóa tệp gốc sau khi chép xong (chuyển vào Thùng rác của Windows); kéo thả vào cửa sổ chính thì chỉ sao chép.
 - Thư viện PDF Hub cũ (`.pdfhub`) được tự động nhận lại.
 - Tệp bạn tự chép vào thư mục phân loại sẽ được nhận diện ở lần mở sau.
 - Thêm tệp bằng nút **Thêm tệp** hoặc kéo thả vào cửa sổ; tệp được chép thẳng từ ổ đĩa, không nạp cả vào bộ nhớ nên video lớn vẫn ổn.

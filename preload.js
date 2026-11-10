@@ -28,7 +28,7 @@ contextBridge.exposeInMainWorld('docHub', {
     return out;
   },
   chooseFiles: () => call('file:choose'),
-  importPaths: (paths, category) => call('file:import', paths, category),
+  importPaths: (paths, category, removeSource) => call('file:import', paths, category, removeSource === true),
 
   readFile: (id) => call('file:read', id),
   readText: (id, maxBytes) => call('file:read-text', id, maxBytes),
@@ -37,6 +37,9 @@ contextBridge.exposeInMainWorld('docHub', {
   getTheme: () => call('app:get-theme'),
   setTheme: (dark) => call('app:set-theme', dark),
   updateMeta: (id, patch) => call('file:update-meta', id, patch),
+  renameFile: (id, name) => call('file:rename', id, name),
+  moveFile: (id, category) => call('file:move', id, category),
+  setChromeDark: (force) => call('app:set-chrome-dark', force),
   trashFile: (id) => call('file:trash', id),
   restoreFile: (id) => call('file:restore', id),
   deleteFile: (id) => call('file:delete', id),

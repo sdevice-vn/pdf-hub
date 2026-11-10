@@ -134,6 +134,29 @@ const { parseRange } = require('../lib/serve');
   const empty = await lib.importFile(put('rong.txt', ''), 'Khác');
   assert.deepStrictEqual(await lib.readText(empty.id), { text: '', truncated: false, size: 0 });
 
+  // Đổi tên và chuyển phân loại
+  const rn = await lib.importFile(put('goc.txt', 'noi dung'), 'Khác');
+  await lib.renameFile(rn.id, 'Tên mới');
+  assert.strictEqual(lib.getFile(rn.id).name, 'Tên mới.txt', 'giữ đuôi khi bỏ trống');
+  assert(fs.existsSync(on('Khác', 'Tên mới.txt')) && !fs.existsSync(on('Khác', 'goc.txt')));
+  await assert.rejects(() => lib.renameFile(rn.id, 'ghi-chu.txt'), /Đã có tệp/);
+  await assert.rejects(() => lib.renameFile(rn.id, '../../x'.replace(/[a-z]/g, '') ), /không hợp lệ/);
+  await lib.renameFile(rn.id, 'TÊN MỚI.txt');
+  assert.strictEqual(lib.getFile(rn.id).name, 'TÊN MỚI.txt', 'đổi hoa/thường');
+  await lib.renameFile(rn.id, '../thoat.txt');
+  assert(lib.isInside(lib.getAbsPath(rn.id)) && lib.getFile(rn.id).name === 'thoat.txt', 'không thoát khỏi thư mục');
+  await lib.importFile(put('thoat.txt', 'khac'), 'Hóa đơn');
+  await lib.moveToCategory(rn.id, 'Hóa đơn');
+  assert.strictEqual(lib.getFile(rn.id).category, 'Hóa đơn');
+  assert.strictEqual(lib.getFile(rn.id).name, 'thoat (1).txt', 'trùng tên khi chuyển thì đánh số');
+  assert(fs.existsSync(on('Hóa đơn', 'thoat (1).txt')) && !fs.existsSync(on('Khác', 'thoat.txt')));
+  await assert.rejects(() => lib.moveToCategory(rn.id, 'Không có'), /không tồn tại/);
+  assert.strictEqual(lib.isInside(on('Khác', 'x')), true);
+  assert.strictEqual(lib.isInside(src), false);
+  await lib.trash(rn.id);
+  await assert.rejects(() => lib.renameFile(rn.id, 'a'), /khôi phục/);
+  await lib.restore(rn.id);
+
   // Thùng rác giữ đúng đuôi tệp; khôi phục về đúng tên
   await lib.trash(a.id);
   assert(fs.existsSync(on('.thung-rac', a.id + '.mp4')));

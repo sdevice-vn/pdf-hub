@@ -62,9 +62,11 @@ function isDark() {
   return typeof settings.dark === 'boolean' ? settings.dark : nativeTheme.shouldUseDarkColors;
 }
 
+let chromeDark = null; // ép thanh tiêu đề tối khi trình xem (luôn nền tối) đang mở
+
 function applyTheme(win) {
   if (!win || win.isDestroyed()) return;
-  const t = isDark() ? THEME_COLORS.dark : THEME_COLORS.light;
+  const t = chromeDark ? { color: '#141B18', symbolColor: '#E6ECE8' } : isDark() ? THEME_COLORS.dark : THEME_COLORS.light;
   win.setBackgroundColor(t.color);
   if (process.platform === 'win32') {
     win.setTitleBarOverlay({ color: t.color, symbolColor: t.symbolColor, height: TITLEBAR_HEIGHT });
@@ -107,21 +109,43 @@ function friendlyError(err) {
   }
 }
 
-// Chép các tệp vào thư viện, tệp nào lỗi thì báo riêng, không làm hỏng cả lượt
-async function importPaths(paths, category) {
+// Chuyển tệp gốc vào Thùng rác của Windows (khôi phục được); nếu không được thì xóa hẳn
+async function removeOriginal(src) {
+  try {
+    await shell.trashItem(src);
+  } catch {
+    await fs.promises.unlink(src);
+  }
+}
+
+// Chép các tệp vào thư viện, tệp nào lỗi thì báo riêng, không làm hỏng cả lượt.
+// removeSource: sau khi chép xong và đối chiếu dung lượng khớp thì xóa tệp gốc.
+async function importPaths(paths, category, removeSource = false) {
   const lib = need();
   let added = 0;
+  let removed = 0;
   const failed = [];
+  const notRemoved = [];
   for (const p of Array.isArray(paths) ? paths : []) {
     if (typeof p !== 'string' || !p) continue;
+    let entry;
     try {
-      await lib.importFile(p, category);
+      const before = await fs.promises.stat(p);
+      entry = await lib.importFile(p, category);
       added++;
+      if (removeSource) {
+        if (lib.isInside(p)) continue; // tệp đã nằm trong thư viện: tuyệt đối không xóa
+        const copied = await fs.promises.stat(lib.getAbsPath(entry.id));
+        if (copied.size !== before.size) throw new Error('Dung lượng bản sao không khớp, giữ lại tệp gốc');
+        await removeOriginal(p);
+        removed++;
+      }
     } catch (err) {
-      failed.push({ name: path.basename(p), error: friendlyError(err) });
+      if (entry) notRemoved.push({ name: path.basename(p), error: friendlyError(err) });
+      else failed.push({ name: path.basename(p), error: friendlyError(err) });
     }
   }
-  return { snapshot: lib.snapshot(), added, failed };
+  return { snapshot: lib.snapshot(), added, removed, failed, notRemoved };
 }
 
 function registerIpc() {
@@ -159,9 +183,11 @@ function registerIpc() {
     });
     return res.canceled ? [] : res.filePaths;
   });
-  handle('file:import', (paths, category) => importPaths(paths, category));
+  handle('file:import', (paths, category, removeSource) => importPaths(paths, category, removeSource === true));
 
   handle('file:update-meta', mutate((lib, id, patch) => lib.updateMeta(id, patch)));
+  handle('file:rename', mutate((lib, id, name) => lib.renameFile(id, name)));
+  handle('file:move', mutate((lib, id, category) => lib.moveToCategory(id, category)));
   handle('file:trash', mutate((lib, id) => lib.trash(id)));
   handle('file:restore', mutate((lib, id) => lib.restore(id)));
   handle('file:delete', mutate((lib, id) => lib.remove(id)));
@@ -176,6 +202,10 @@ function registerIpc() {
   });
 
   handle('app:get-theme', async () => (typeof settings.dark === 'boolean' ? settings.dark : null));
+  handle('app:set-chrome-dark', async (force) => {
+    chromeDark = force === true ? true : null;
+    applyTheme(mainWindow);
+  });
   handle('app:set-theme', async (dark) => {
     settings.dark = !!dark;
     saveSettings();
