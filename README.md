@@ -24,6 +24,7 @@ Vì lý do an toàn, app không chạy trực tiếp tệp thực thi/script (ex
 ```
 - Đổi tên và chuyển phân loại: nút bút chì trên mỗi tệp (hoặc trong trình xem).
 - Hộp thoại **Thêm tệp** có tùy chọn xóa tệp gốc sau khi chép xong (chuyển vào Thùng rác của Windows); kéo thả vào cửa sổ chính thì chỉ sao chép.
+- Nút **Đổi thư mục**: chọn chuyển toàn bộ phân loại, tệp, thùng rác sang thư mục mới (cắt) hoặc chỉ mở thư mục mới.
 - Thư viện PDF Hub cũ (`.pdfhub`) được tự động nhận lại.
 - Tệp bạn tự chép vào thư mục phân loại sẽ được nhận diện ở lần mở sau.
 - Thêm tệp bằng nút **Thêm tệp** hoặc kéo thả vào cửa sổ; tệp được chép thẳng từ ổ đĩa, không nạp cả vào bộ nhớ nên video lớn vẫn ổn.

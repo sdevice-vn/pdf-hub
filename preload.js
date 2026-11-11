@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld('docHub', {
 
   loadLibrary: () => call('lib:load'),
   chooseFolder: () => call('lib:choose'),
+  pickFolder: () => call('lib:pick'),
+  switchFolder: (target, mode) => call('lib:switch', target, mode),
   openLibraryFolder: () => call('lib:open-folder'),
 
   // Thêm tệp: lấy đường dẫn thật của tệp kéo thả để main chép thẳng từ đĩa (không nạp cả tệp vào bộ nhớ)

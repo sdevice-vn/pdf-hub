@@ -1337,7 +1337,59 @@
     });
     document.querySelectorAll('.btnCloseFolderModal').forEach((btn) =>
         btn.addEventListener('click', () => closeModal(folderModal)));
-    $('btnChangeFolder').addEventListener('click', chooseFolder);
+    // Đổi thư mục: hỏi chuyển toàn bộ dữ liệu hay chỉ mở thư mục mới
+    const moveModal = $('moveModal');
+    let pendingFolder = null;
+
+    function closeMoveModal() {
+        moveModal.classList.add('hidden');
+        pendingFolder = null;
+    }
+
+    async function changeFolder() {
+        try {
+            const picked = await api.pickFolder();
+            if (!picked) return;
+            if (!state.libraryReady) { // chưa có thư viện nào để chuyển
+                await finishSwitch(picked.path, 'open');
+                return;
+            }
+            pendingFolder = picked.path;
+            $('movePath').textContent = picked.path;
+            $('moveText').textContent = picked.canMove
+                ? 'Toàn bộ phân loại, tệp, thùng rác và ghi chú sẽ được chuyển (cắt) từ thư mục hiện tại sang thư mục này. Nếu hai thư mục khác ổ đĩa, việc chuyển có thể mất thời gian; tệp cũ chỉ bị xóa sau khi bản sao đã được đối chiếu đủ.'
+                : `Không thể chuyển dữ liệu sang đây: ${picked.reason}. Bạn vẫn có thể chỉ mở thư mục này; dữ liệu ở thư mục cũ được giữ nguyên.`;
+            $('btnMoveAll').disabled = !picked.canMove;
+            $('btnMoveAll').classList.toggle('opacity-50', !picked.canMove);
+            $('btnMoveAll').classList.toggle('cursor-not-allowed', !picked.canMove);
+            moveModal.classList.remove('hidden');
+        } catch (err) { showError(err); }
+    }
+
+    async function finishSwitch(target, mode) {
+        closeMoveModal();
+        setBusy(mode === 'move' ? 'Đang chuyển dữ liệu sang thư mục mới' : 'Đang mở thư mục');
+        try {
+            const res = await api.switchFolder(target, mode);
+            applySnapshot(res.snapshot);
+            state.selectedCategory = 'ALL';
+            state.nav = 'all';
+            welcomeScreen.classList.add('hidden');
+            closeModal(folderModal);
+            renderApp();
+            showToast(mode === 'move' ? 'Đã chuyển toàn bộ dữ liệu sang thư mục mới' : 'Đã mở thư mục lưu trữ');
+            backfillPageCounts();
+        } catch (err) {
+            showError(err);
+        } finally {
+            setBusy(null);
+        }
+    }
+
+    $('btnMoveCancel').addEventListener('click', closeMoveModal);
+    $('btnMoveAll').addEventListener('click', () => { if (pendingFolder) finishSwitch(pendingFolder, 'move'); });
+    $('btnMoveOpenOnly').addEventListener('click', () => { if (pendingFolder) finishSwitch(pendingFolder, 'open'); });
+    $('btnChangeFolder').addEventListener('click', changeFolder);
     $('btnOpenLibraryFolder').addEventListener('click', async () => {
         try { await api.openLibraryFolder(); } catch (err) { showError(err); }
     });
@@ -1470,7 +1522,8 @@
         }
 
         if (e.key === 'Escape') {
-            if (!editModal.classList.contains('hidden')) closeEditModal();
+            if (!moveModal.classList.contains('hidden')) closeMoveModal();
+            else if (!editModal.classList.contains('hidden')) closeEditModal();
             else if (isViewerOpen()) closeViewer();
             else if ([uploadModal, categoryModal, folderModal, editModal].some((m) => !m.classList.contains('hidden'))) {
                 [uploadModal, categoryModal, folderModal].forEach(closeModal);

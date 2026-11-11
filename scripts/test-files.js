@@ -170,6 +170,46 @@ const { parseRange } = require('../lib/serve');
   assert.strictEqual(lib.getFile(a.id).duration, 123.4);
   assert.strictEqual(lib.getFile('pdf_old').notes, 'ghi chú cũ');
 
+
+  // ---- Chuyển thư viện sang thư mục mới ----
+  const { moveLibraryData, inspectTarget } = require('../lib/migrate');
+  const { TRASH_DIR, META_DIR } = require('../lib/library');
+  const dest = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'dochub-new-')), 'thu-vien-moi');
+  const namesToMove = [...lib.categories, TRASH_DIR, META_DIR];
+  const before = lib.files.map((f) => [f.relPath, fs.statSync(lib.getAbsPath(f.id)).size]);
+  assert.strictEqual((await inspectTarget(root, path.join(root, 'con'))).ok, false, 'thư mục con');
+  assert.strictEqual((await inspectTarget(root, path.dirname(root))).ok, false, 'thư mục cha');
+  assert.strictEqual((await inspectTarget(root, root)).ok, false, 'cùng thư mục');
+  fs.mkdirSync(path.join(path.dirname(dest), 'khong-trong'));
+  fs.writeFileSync(path.join(path.dirname(dest), 'khong-trong', 'x'), '1');
+  assert.strictEqual((await inspectTarget(root, path.join(path.dirname(dest), 'khong-trong'))).reason, 'Thư mục mới không trống');
+
+  // Cùng ổ đĩa (rename)
+  const n1 = await moveLibraryData(root, dest, namesToMove);
+  assert(n1 > 0);
+  assert(!fs.existsSync(on('Khác')) && !fs.existsSync(on('.dochub')), 'thư mục cũ đã được dọn');
+  let moved = await Library.open(dest);
+  assert.strictEqual(moved.files.length, before.length);
+  for (const [rel, size] of before) assert.strictEqual(fs.statSync(path.join(dest, rel)).size, size);
+  assert.strictEqual(moved.getFile(a.id).duration, 123.4, 'siêu dữ liệu đi cùng');
+
+  // Khác ổ đĩa (EXDEV): chép, đối chiếu, xóa bản cũ
+  const dest2 = path.join(path.dirname(dest), 'thu-vien-3');
+  const exdev = async () => { const e = new Error('xdev'); e.code = 'EXDEV'; throw e; };
+  await moveLibraryData(dest, dest2, namesToMove, { rename: exdev });
+  assert(!fs.existsSync(path.join(dest, 'Khác')));
+  moved = await Library.open(dest2);
+  assert(fs.readFileSync(path.join(dest2, 'Khác', 'clip.mp4')).equals(big), 'chép khác ổ đúng từng byte');
+
+  // Lỗi giữa chừng -> hoàn tác, thư mục cũ nguyên vẹn
+  const dest3 = path.join(path.dirname(dest), 'thu-vien-4');
+  let calls = 0;
+  const flaky = async (s, d) => { if (++calls === 3) { const e = new Error('hỏng đĩa'); e.code = 'EIO'; throw e; } return fs.promises.rename(s, d); };
+  await assert.rejects(() => moveLibraryData(dest2, dest3, namesToMove, { rename: flaky }), /giữ nguyên ở thư mục cũ/);
+  assert((await Library.open(dest2)).files.length === before.length, 'sau hoàn tác vẫn đủ tệp');
+  assert(fs.readFileSync(path.join(dest2, 'Khác', 'clip.mp4')).equals(big));
+  fs.rmSync(path.dirname(dest), { recursive: true, force: true });
+  lib = null;
   fs.rmSync(root, { recursive: true, force: true });
   fs.rmSync(src, { recursive: true, force: true });
   console.log('OK - kiểm thử đa định dạng đạt');

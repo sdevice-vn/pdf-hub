@@ -3,7 +3,8 @@ const { app, BrowserWindow, ipcMain, dialog, shell, Menu, nativeTheme, protocol 
 const path = require('path');
 const fs = require('fs');
 const { Readable } = require('stream');
-const { Library } = require('./lib/library');
+const { moveLibraryData, inspectTarget } = require('./lib/migrate');
+const { Library, TRASH_DIR, META_DIR } = require('./lib/library');
 const { mimeOf, isRisky, extOf } = require('./lib/kinds');
 const { parseRange } = require('./lib/serve');
 
@@ -167,6 +168,35 @@ function registerIpc() {
     settings.libraryPath = chosen;
     saveSettings();
     return library.snapshot();
+  });
+
+  // Chọn thư mục mới (chưa đổi gì): báo có chuyển dữ liệu sang đó được không
+  handle('lib:pick', async () => {
+    const res = await dialog.showOpenDialog(mainWindow, {
+      title: 'Chọn thư mục lưu trữ mới',
+      defaultPath: settings.libraryPath || app.getPath('documents'),
+      properties: ['openDirectory', 'createDirectory']
+    });
+    if (res.canceled || !res.filePaths.length) return null;
+    const chosen = res.filePaths[0];
+    if (!library) return { path: chosen, canMove: false, reason: '' };
+    const check = await inspectTarget(library.root, chosen);
+    return { path: chosen, canMove: check.ok, reason: check.reason };
+  });
+
+  // Đổi thư mục: mode 'move' = chuyển toàn bộ dữ liệu sang, 'open' = chỉ mở thư mục mới
+  handle('lib:switch', async (target, mode) => {
+    if (typeof target !== 'string' || !path.isAbsolute(target)) throw new Error('Đường dẫn không hợp lệ');
+    let moved = 0;
+    if (mode === 'move') {
+      const lib = need();
+      const names = [...lib.categories, TRASH_DIR, META_DIR, '.pdfhub'];
+      moved = await lib._run(() => moveLibraryData(lib.root, target, names));
+    }
+    library = await Library.open(target);
+    settings.libraryPath = target;
+    saveSettings();
+    return { snapshot: library.snapshot(), moved };
   });
 
   handle('lib:open-folder', async () => {
